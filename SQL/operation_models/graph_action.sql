@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS graph_action (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   previous_action_id uuid,
   next_action_id uuid,
@@ -30,20 +30,20 @@ CREATE TABLE IF NOT EXISTS graph_action (
   CONSTRAINT graph_action_applied_at_check CHECK (
     status <> 'applied' OR applied_at IS NOT NULL
   ),
-  PRIMARY KEY (user_id, id),
-  FOREIGN KEY (user_id, previous_action_id)
-    REFERENCES graph_action(user_id, id),
-  FOREIGN KEY (user_id, next_action_id)
-    REFERENCES graph_action(user_id, id),
-  FOREIGN KEY (user_id, run_id)
-    REFERENCES graph_workflow_run(user_id, id)
+  PRIMARY KEY (workspace_id, id),
+  FOREIGN KEY (workspace_id, previous_action_id)
+    REFERENCES graph_action(workspace_id, id),
+  FOREIGN KEY (workspace_id, next_action_id)
+    REFERENCES graph_action(workspace_id, id),
+  FOREIGN KEY (workspace_id, run_id)
+    REFERENCES graph_workflow_run(workspace_id, id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS graph_action_previous_unique_idx
-  ON graph_action (user_id, previous_action_id) WHERE previous_action_id IS NOT NULL;
+  ON graph_action (workspace_id, previous_action_id) WHERE previous_action_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS graph_action_next_unique_idx
-  ON graph_action (user_id, next_action_id) WHERE next_action_id IS NOT NULL;
+  ON graph_action (workspace_id, next_action_id) WHERE next_action_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS graph_action_run_created_idx
-  ON graph_action (user_id, run_id, created_at);
+  ON graph_action (workspace_id, run_id, created_at);
 CREATE INDEX IF NOT EXISTS graph_action_status_created_idx
-  ON graph_action (user_id, status, created_at DESC);
+  ON graph_action (workspace_id, status, created_at DESC);

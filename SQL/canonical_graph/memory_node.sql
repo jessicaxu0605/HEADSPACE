@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS memory_node (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   node_type text NOT NULL CHECK (
     node_type IN ('person', 'location', 'date', 'task', 'concept')
@@ -21,21 +21,21 @@ CREATE TABLE IF NOT EXISTS memory_node (
   CONSTRAINT memory_node_not_merged_into_self_check CHECK (
     merged_into_node_id IS DISTINCT FROM id
   ),
-  PRIMARY KEY (user_id, id),
-  FOREIGN KEY (user_id, merged_into_node_id)
-    REFERENCES memory_node(user_id, id),
-  FOREIGN KEY (user_id, origin_action_id)
-    REFERENCES graph_action(user_id, id),
-  FOREIGN KEY (user_id, last_modified_action_id)
-    REFERENCES graph_action(user_id, id)
+  PRIMARY KEY (workspace_id, id),
+  FOREIGN KEY (workspace_id, merged_into_node_id)
+    REFERENCES memory_node(workspace_id, id),
+  FOREIGN KEY (workspace_id, origin_action_id)
+    REFERENCES graph_action(workspace_id, id),
+  FOREIGN KEY (workspace_id, last_modified_action_id)
+    REFERENCES graph_action(workspace_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS memory_node_type_idx
-  ON memory_node (user_id, node_type) WHERE deleted_at IS NULL AND merged_into_node_id IS NULL;
+  ON memory_node (workspace_id, node_type) WHERE deleted_at IS NULL AND merged_into_node_id IS NULL;
 CREATE INDEX IF NOT EXISTS memory_node_name_idx
-  ON memory_node (user_id, lower(name)) WHERE deleted_at IS NULL AND merged_into_node_id IS NULL;
+  ON memory_node (workspace_id, lower(name)) WHERE deleted_at IS NULL AND merged_into_node_id IS NULL;
 CREATE INDEX IF NOT EXISTS memory_node_merged_into_idx
-  ON memory_node (user_id, merged_into_node_id) WHERE merged_into_node_id IS NOT NULL;
+  ON memory_node (workspace_id, merged_into_node_id) WHERE merged_into_node_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS memory_node_set_updated_at ON memory_node;
 CREATE TRIGGER memory_node_set_updated_at

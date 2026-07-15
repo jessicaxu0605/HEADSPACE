@@ -1,6 +1,6 @@
 CREATE OR REPLACE VIEW bidirectional_memory_edge AS
 SELECT
-  e.user_id,
+  e.workspace_id,
   e.id AS edge_id,
   e.from_node_id,
   e.to_node_id,
@@ -22,7 +22,7 @@ JOIN relation_type rt ON rt.id = e.relation_type_id
 UNION ALL
 
 SELECT
-  e.user_id,
+  e.workspace_id,
   e.id AS edge_id,
   e.to_node_id AS from_node_id,
   e.from_node_id AS to_node_id,

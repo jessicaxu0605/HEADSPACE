@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS memory_evidence (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   edge_id uuid NOT NULL,
   source_id uuid NOT NULL,
@@ -9,16 +9,16 @@ CREATE TABLE IF NOT EXISTS memory_evidence (
   created_at timestamptz NOT NULL DEFAULT now(),
   origin_action_id uuid,
   last_modified_action_id uuid,
-  PRIMARY KEY (user_id, id),
-  FOREIGN KEY (user_id, edge_id)
-    REFERENCES memory_edge(user_id, id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id, source_id)
-    REFERENCES memory_source(user_id, id) ON DELETE RESTRICT,
-  FOREIGN KEY (user_id, origin_action_id)
-    REFERENCES graph_action(user_id, id),
-  FOREIGN KEY (user_id, last_modified_action_id)
-    REFERENCES graph_action(user_id, id)
+  PRIMARY KEY (workspace_id, id),
+  FOREIGN KEY (workspace_id, edge_id)
+    REFERENCES memory_edge(workspace_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id, source_id)
+    REFERENCES memory_source(workspace_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (workspace_id, origin_action_id)
+    REFERENCES graph_action(workspace_id, id),
+  FOREIGN KEY (workspace_id, last_modified_action_id)
+    REFERENCES graph_action(workspace_id, id)
 );
 
-CREATE INDEX IF NOT EXISTS memory_evidence_edge_idx ON memory_evidence (user_id, edge_id);
-CREATE INDEX IF NOT EXISTS memory_evidence_source_idx ON memory_evidence (user_id, source_id);
+CREATE INDEX IF NOT EXISTS memory_evidence_edge_idx ON memory_evidence (workspace_id, edge_id);
+CREATE INDEX IF NOT EXISTS memory_evidence_source_idx ON memory_evidence (workspace_id, source_id);

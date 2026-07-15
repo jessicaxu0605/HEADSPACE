@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS graph_workflow_run (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   type text NOT NULL CHECK (btrim(type) <> ''),
   status text NOT NULL DEFAULT 'pending',
@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS graph_workflow_run (
   CONSTRAINT graph_workflow_run_applied_at_check CHECK (
     status <> 'applied' OR applied_at IS NOT NULL
   ),
-  PRIMARY KEY (user_id, id)
+  PRIMARY KEY (workspace_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS graph_workflow_run_status_created_idx
-  ON graph_workflow_run (user_id, status, created_at DESC);
+  ON graph_workflow_run (workspace_id, status, created_at DESC);

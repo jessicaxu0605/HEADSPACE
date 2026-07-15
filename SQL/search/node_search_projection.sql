@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS node_search_projection (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   node_id uuid NOT NULL,
   projection_type text NOT NULL,
   embedding_model text NOT NULL CHECK (btrim(embedding_model) <> ''),
@@ -14,13 +14,13 @@ CREATE TABLE IF NOT EXISTS node_search_projection (
   CONSTRAINT node_search_projection_type_check CHECK (
     projection_type IN ('identity', 'profile')
   ),
-  PRIMARY KEY (user_id, node_id, projection_type, embedding_model, projection_version),
-  FOREIGN KEY (user_id, node_id)
-    REFERENCES memory_node(user_id, id) ON DELETE CASCADE
+  PRIMARY KEY (workspace_id, node_id, projection_type, embedding_model, projection_version),
+  FOREIGN KEY (workspace_id, node_id)
+    REFERENCES memory_node(workspace_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS node_search_projection_current_idx
-  ON node_search_projection (user_id, projection_type, embedding_model, projection_version DESC);
+  ON node_search_projection (workspace_id, projection_type, embedding_model, projection_version DESC);
 
 DROP TRIGGER IF EXISTS node_search_projection_set_updated_at ON node_search_projection;
 CREATE TRIGGER node_search_projection_set_updated_at

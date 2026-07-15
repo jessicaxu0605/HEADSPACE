@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS node_external_identifier (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   node_id uuid NOT NULL,
   provider text NOT NULL,
@@ -16,16 +16,16 @@ CREATE TABLE IF NOT EXISTS node_external_identifier (
   CONSTRAINT node_external_identifier_deleted_fields_check CHECK (
     deleted_reason IS NULL OR deleted_at IS NOT NULL
   ),
-  PRIMARY KEY (user_id, id),
-  FOREIGN KEY (user_id, node_id)
-    REFERENCES memory_node(user_id, id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id, origin_action_id)
-    REFERENCES graph_action(user_id, id),
-  FOREIGN KEY (user_id, last_modified_action_id)
-    REFERENCES graph_action(user_id, id)
+  PRIMARY KEY (workspace_id, id),
+  FOREIGN KEY (workspace_id, node_id)
+    REFERENCES memory_node(workspace_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (workspace_id, origin_action_id)
+    REFERENCES graph_action(workspace_id, id),
+  FOREIGN KEY (workspace_id, last_modified_action_id)
+    REFERENCES graph_action(workspace_id, id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS node_external_identifier_active_unique_idx
-  ON node_external_identifier (user_id, provider, external_id) WHERE deleted_at IS NULL;
+  ON node_external_identifier (workspace_id, provider, external_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS node_external_identifier_node_idx
-  ON node_external_identifier (user_id, node_id) WHERE deleted_at IS NULL;
+  ON node_external_identifier (workspace_id, node_id) WHERE deleted_at IS NULL;

@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS memory_edge (
-  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   from_node_id uuid NOT NULL,
   to_node_id uuid NOT NULL,
@@ -20,23 +20,23 @@ CREATE TABLE IF NOT EXISTS memory_edge (
   CONSTRAINT memory_edge_deleted_fields_check CHECK (
     deleted_reason IS NULL OR deleted_at IS NOT NULL
   ),
-  PRIMARY KEY (user_id, id),
-  FOREIGN KEY (user_id, from_node_id)
-    REFERENCES memory_node(user_id, id) ON DELETE RESTRICT,
-  FOREIGN KEY (user_id, to_node_id)
-    REFERENCES memory_node(user_id, id) ON DELETE RESTRICT,
-  FOREIGN KEY (user_id, origin_action_id)
-    REFERENCES graph_action(user_id, id),
-  FOREIGN KEY (user_id, last_modified_action_id)
-    REFERENCES graph_action(user_id, id)
+  PRIMARY KEY (workspace_id, id),
+  FOREIGN KEY (workspace_id, from_node_id)
+    REFERENCES memory_node(workspace_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (workspace_id, to_node_id)
+    REFERENCES memory_node(workspace_id, id) ON DELETE RESTRICT,
+  FOREIGN KEY (workspace_id, origin_action_id)
+    REFERENCES graph_action(workspace_id, id),
+  FOREIGN KEY (workspace_id, last_modified_action_id)
+    REFERENCES graph_action(workspace_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS memory_edge_from_relation_idx
-  ON memory_edge (user_id, from_node_id, relation_type_id) WHERE deleted_at IS NULL;
+  ON memory_edge (workspace_id, from_node_id, relation_type_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS memory_edge_to_relation_idx
-  ON memory_edge (user_id, to_node_id, relation_type_id) WHERE deleted_at IS NULL;
+  ON memory_edge (workspace_id, to_node_id, relation_type_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS memory_edge_pair_idx
-  ON memory_edge (user_id, from_node_id, to_node_id) WHERE deleted_at IS NULL;
+  ON memory_edge (workspace_id, from_node_id, to_node_id) WHERE deleted_at IS NULL;
 
 DROP TRIGGER IF EXISTS memory_edge_set_updated_at ON memory_edge;
 CREATE TRIGGER memory_edge_set_updated_at
