@@ -1,7 +1,15 @@
 .DS_Store
 Design Docs/
 
+# Python build and local environment artifacts.
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
 # Local environment files may contain database credentials.
 .env
 .env.*
 !.env.example
+
+AGENTS.md
