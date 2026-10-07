@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, TypeAlias
+from typing import Any, Literal, TypeAlias
 from uuid import UUID
 
 
@@ -112,7 +112,9 @@ class ProposedEvidenceAnnotation:
 @dataclass(frozen=True, slots=True)
 class ProposedEvidence:
     raw_content: str
+    confidence: float
     annotations: list[ProposedEvidenceAnnotation] = field(default_factory=list)
+    strength_boost: float | None = None
 
 
 @dataclass(slots=True)
@@ -122,8 +124,6 @@ class ProposedEdge:
     to_proposed_node_id: str
     relation_type: str
     evidence: list[ProposedEvidence] = field(default_factory=list)
-    confidence: float = 0.0
-    strength: float | None = None
 
 
 @dataclass(slots=True)
@@ -238,7 +238,28 @@ class ExtractionRepairItem:
 
 
 @dataclass(frozen=True, slots=True)
-class ChunkExtractionSnapshotOutput:
+class ChunkExtractionOutput:
+    chunk_subgraph: ProposedGraph
+    proposed_graph_handoff: ProposedGraphHandoff
+    updated_extraction_context: ExtractionContext
+    repair_items: list[ExtractionRepairItem] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionValidationIssue:
+    code: str
+    path: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkExtractionRepairContext:
+    invalid_output: ChunkExtractionOutput
+    issues: list[ExtractionValidationIssue]
+
+
+@dataclass(frozen=True, slots=True)
+class ProposedSubgraphExtractionResult:
     proposed_graph: ProposedGraph
     proposed_graph_handoff: ProposedGraphHandoff
     updated_extraction_context: ExtractionContext
@@ -295,8 +316,6 @@ class RemoveEdgeAction:
 class ModifyEdgeAction:
     proposed_edge_id: str
     set_relation_type: str | None = None
-    set_confidence: float | None = None
-    set_strength: float | None = None
     type: Literal["modify_edge"] = "modify_edge"
 
 
@@ -342,20 +361,3 @@ PatchAction: TypeAlias = (
 class ChunkExtractionPatchOutput:
     proposed_graph_patch: list[PatchAction]
     updated_extraction_context: ExtractionContext
-
-
-class SourceAdapter(Protocol):
-    preferred_strategy: SourceReadStrategy
-
-    def build_extraction_metadata(
-        self,
-        source_metadata: JsonObject,
-    ) -> JsonObject:
-        ...
-
-    def create_chunk_stream(
-        self,
-        payload: Any,
-        source: Any,
-    ) -> AsyncIterable[SourceChunk]:
-        ...

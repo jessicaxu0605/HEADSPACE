@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.db import get_connection
+from app.workflows.extract_proposed_subgraph import extract_proposed_subgraph
 from app.workflows.types import MemorySourceInput, MemorySourceRecord
 from psycopg.types.json import Jsonb
 
@@ -45,11 +46,6 @@ def create_memory_source(source_input: MemorySourceInput) -> MemorySourceRecord:
 
             return MemorySourceRecord(**row)
 
-
-# big job
-# TODO: chunk-level recovery LATER
-def extract_proposed_subgraph():
-    pass
 
 # returns a transaction plan
 def resolve_proposed_subgraph():
