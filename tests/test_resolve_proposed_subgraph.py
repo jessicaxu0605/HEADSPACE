@@ -10,6 +10,7 @@ from app.workflows.resolve_proposed_subgraph import (
     CanonicalNode,
     NodeCandidate,
     RelationType,
+    SimpleCanonicalGraphResolverStore,
     UpsertCanonicalEdge,
     resolve_proposed_subgraph,
 )
@@ -67,6 +68,65 @@ class FakeResolverStore:
 
 
 class ResolveProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
+    async def test_simple_store_finds_exact_and_fuzzy_candidates(self) -> None:
+        jessica = CanonicalNode(
+            uuid4(),
+            "person",
+            "Jessica Xu",
+            identifiers=["Jess"],
+            external_ids=[ProposedExternalId("slack", "U123")],
+        )
+        sarah = CanonicalNode(uuid4(), "person", "Sarah Chen")
+        location = CanonicalNode(uuid4(), "location", "Sarah Chen")
+        store = SimpleCanonicalGraphResolverStore(
+            nodes=[jessica, sarah, location],
+        )
+
+        external_match = await store.find_node_candidates(
+            workspace_id=uuid4(),
+            proposed_node=ProposedNode(
+                "n1",
+                "person",
+                ["J. Xu"],
+                "J. Xu",
+                external_ids=[ProposedExternalId("SLACK", "U123")],
+            ),
+        )
+        identifier_match = await store.find_node_candidates(
+            workspace_id=uuid4(),
+            proposed_node=ProposedNode("n2", "person", ["jess"], "jess"),
+        )
+        fuzzy_match = await store.find_node_candidates(
+            workspace_id=uuid4(),
+            proposed_node=ProposedNode(
+                "n3", "person", ["Sara Chen"], "Sara Chen"
+            ),
+        )
+
+        self.assertEqual(external_match[0].match_kind, "external_id")
+        self.assertEqual(external_match[0].node.node_id, jessica.node_id)
+        self.assertEqual(identifier_match[0].match_kind, "identifier")
+        self.assertEqual(identifier_match[0].node.node_id, jessica.node_id)
+        self.assertEqual([item.node.node_id for item in fuzzy_match], [sarah.node_id])
+        self.assertEqual(fuzzy_match[0].match_kind, "fuzzy")
+        self.assertGreater(fuzzy_match[0].match_score, 0.92)
+
+    async def test_simple_store_drives_fuzzy_node_resolution(self) -> None:
+        sarah = CanonicalNode(uuid4(), "person", "Sarah Chen")
+        graph = ProposedGraph(
+            nodes=[ProposedNode("n1", "person", ["Sara Chen"], "Sara Chen")]
+        )
+
+        plan = await resolve_proposed_subgraph(
+            workspace_id=uuid4(),
+            source_id=uuid4(),
+            proposed_graph=graph,
+            store=SimpleCanonicalGraphResolverStore(nodes=[sarah]),
+        )
+
+        self.assertEqual(plan.node_bindings[0].outcome, "resolved")
+        self.assertEqual(plan.node_bindings[0].node_id, sarah.node_id)
+
     async def test_resolves_exact_node_and_plans_only_new_identity_data(self) -> None:
         workspace_id = uuid4()
         source_id = uuid4()

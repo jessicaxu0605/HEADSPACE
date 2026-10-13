@@ -24,8 +24,8 @@ having the app execute prototype `CREATE` scripts.
 
 The MVP API accepts manual entries, email text/JSON, and calendar event text/JSON.
 It stores the complete source in a private S3 bucket, persists the source and run
-in PostgreSQL, calls Groq for chunk extraction, and persists the resulting proposed
-graph. Canonical graph application is not wired in yet.
+in PostgreSQL, calls Groq for chunk extraction, resolves against the current
+workspace graph, and applies the canonical graph transaction atomically.
 
 Add the existing Neon connection string and Groq key to `.env.local`:
 
@@ -37,7 +37,7 @@ venv/bin/python -m app.migrate
 If your network blocks outbound PostgreSQL connections on port 5432, open the
 Neon Console's SQL Editor for the target branch/database instead:
 
-1. Paste and run `migrations/001_ingestion_api.sql`.
+1. Paste and run each unapplied file in `migrations/` in filename order.
 2. Then run the migration tracking statements below:
 
 ```sql
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 );
 
 INSERT INTO schema_migration (version)
-VALUES ('001_ingestion_api.sql')
+VALUES ('001_ingestion_api.sql'), ('002_canonical_graph.sql')
 ON CONFLICT (version) DO NOTHING;
 ```
 
@@ -75,8 +75,10 @@ curl -X POST http://localhost:8000/api/v1/ingestions \
   }'
 ```
 
-The completed response includes `result.proposed_graph`. Fetch a persisted run
-later with `GET /api/v1/ingestions/{run_id}`. Interactive API documentation is at
+The completed response includes the extracted `result.proposed_graph` and the
+applied create-or-resolve output in `result.transaction_plan`. Fetch a persisted
+run later with
+`GET /api/v1/ingestions/{run_id}`. Interactive API documentation is at
 `http://localhost:8000/docs`.
 
 > **Temporary prototype identity:** Until authentication and workspace selection

@@ -21,6 +21,10 @@ from app.workflows.ingest import (
     get_ingestion_run,
     ingest_content,
 )
+from app.workflows.postgres_canonical_graph import PostgresCanonicalGraphResolverStore
+from app.workflows.resolve_proposed_subgraph import (
+    CanonicalGraphResolverStore,
+)
 from app.workflows.types import IngestionRunRecord, MAX_LOAD_ALL_BYTES
 
 
@@ -84,31 +88,47 @@ def get_extraction_llm() -> GroqChunkExtractionLLM:
     return GroqChunkExtractionLLM()
 
 
+@lru_cache(maxsize=1)
+def get_resolver_store() -> CanonicalGraphResolverStore:
+    """Return live workspace-scoped canonical graph reads."""
+
+    return PostgresCanonicalGraphResolverStore()
+
+
 def _cors_origins() -> list[str]:
     configured = os.getenv("API_CORS_ORIGINS", "http://localhost:5173")
     return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
-def _print_proposed_subgraph(run: IngestionRunRecord) -> None:
-    """Temporarily expose completed extraction output in the server console."""
+def _print_ingestion_result(run: IngestionRunRecord) -> None:
+    """Temporarily expose extraction and resolution output in the console."""
 
     if run.status != "completed" or run.result is None:
         return
     proposed_graph = run.result.get("proposed_graph")
-    if proposed_graph is None:
+    transaction_plan = run.result.get("transaction_plan")
+    if proposed_graph is None and transaction_plan is None:
         return
-    print(
-        f"Proposed subgraph for ingestion run {run.id}:\n"
-        f"{json.dumps(proposed_graph, indent=2, sort_keys=True)}"
-    )
+    output: list[str] = []
+    if proposed_graph is not None:
+        output.append(
+            f"Proposed subgraph for ingestion run {run.id}:\n"
+            f"{json.dumps(proposed_graph, indent=2, sort_keys=True)}"
+        )
+    if transaction_plan is not None:
+        output.append(
+            f"Resolution transaction plan for ingestion run {run.id}:\n"
+            f"{json.dumps(transaction_plan, indent=2, sort_keys=True)}"
+        )
+    print("\n\n".join(output))
 
 
 app = FastAPI(
     title="Headspace Ingestion API",
     version="0.1.0",
     description=(
-        "Persists source content and extracts a chunk-aggregated proposed graph. "
-        "Canonical graph resolution is not part of this endpoint yet."
+        "Persists source content, extracts a chunk-aggregated proposed graph, "
+        "and atomically applies canonical graph changes."
     ),
 )
 app.add_middleware(
@@ -135,8 +155,9 @@ async def create_ingestion(
     request: IngestionRequest,
     response: Response,
     llm: ChunkExtractionLLM = Depends(get_extraction_llm),
+    resolver_store: CanonicalGraphResolverStore = Depends(get_resolver_store),
 ) -> IngestionRunResponse | JSONResponse:
-    """Persist and extract one source using temporary prototype identity routing."""
+    """Extract and resolve one source using temporary prototype identity routing."""
 
     # TEMPORARY: replace with the authenticated request's workspace ID before
     # this endpoint is used in a multi-user or production deployment.
@@ -149,6 +170,7 @@ async def create_ingestion(
             source_metadata=request.source_metadata,
             client_request_id=request.client_request_id,
             llm=llm,
+            resolver_store=resolver_store,
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -156,7 +178,7 @@ async def create_ingestion(
         payload = IngestionRunResponse.from_record(exc.run)
         return JSONResponse(status_code=502, content=payload.model_dump(mode="json"))
 
-    _print_proposed_subgraph(run)
+    _print_ingestion_result(run)
     if run.status == "processing":
         response.status_code = status.HTTP_202_ACCEPTED
     return IngestionRunResponse.from_record(run)

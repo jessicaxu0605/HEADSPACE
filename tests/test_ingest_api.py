@@ -7,11 +7,15 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-from app.main import app, get_extraction_llm
+from app.main import app, get_extraction_llm, get_resolver_store
 from app.workflows.types import IngestionRunRecord
 
 
 class FakeLLM:
+    pass
+
+
+class FakeResolverStore:
     pass
 
 
@@ -22,7 +26,15 @@ def run_record(*, status: str = "completed") -> IngestionRunRecord:
         workspace_id=UUID("00000000-0000-0000-0000-000000000002"),
         source_id=uuid4(),
         status=status,
-        result={"proposed_graph": {"nodes": [], "edges": []}}
+        result={
+            "proposed_graph": {"nodes": [], "edges": []},
+            "transaction_plan": {
+                "node_bindings": [],
+                "node_actions": [],
+                "edge_actions": [],
+                "repair_items": [],
+            },
+        }
         if status == "completed"
         else None,
         error=None,
@@ -34,6 +46,8 @@ def run_record(*, status: str = "completed") -> IngestionRunRecord:
 class IngestionApiTests(unittest.TestCase):
     def setUp(self) -> None:
         app.dependency_overrides[get_extraction_llm] = lambda: FakeLLM()
+        self.resolver_store = FakeResolverStore()
+        app.dependency_overrides[get_resolver_store] = lambda: self.resolver_store
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -70,9 +84,18 @@ class IngestionApiTests(unittest.TestCase):
             {"nodes": [], "edges": []},
         )
         self.assertEqual(ingest.await_args.kwargs["source_type"], "manual_entry")
+        self.assertIs(
+            ingest.await_args.kwargs["resolver_store"],
+            self.resolver_store,
+        )
         printed = print_output.call_args.args[0]
         self.assertIn(f"Proposed subgraph for ingestion run {expected.id}", printed)
         self.assertIn('"nodes": []', printed)
+        self.assertIn(
+            f"Resolution transaction plan for ingestion run {expected.id}",
+            printed,
+        )
+        self.assertIn('"node_bindings": []', printed)
 
     def test_rejects_blank_or_oversized_content(self) -> None:
         blank = self.client.post(
