@@ -19,10 +19,30 @@ if (!configuredApiBaseUrl) {
 
 const apiBaseUrl = configuredApiBaseUrl.replace(/\/$/, "");
 
+const starterPrompts = [
+  "What’s on your mind?",
+  "What’s lingering?",
+  "Who have you been thinking about?",
+  "Penny for your thoughts",
+  "What made today different?",
+  "Anything worth saving?",
+  "What’s the story?",
+  "What’s still floating around?",
+  "Anything unfinished?",
+  "What’s on the horizon?",
+  "Start from the beginning",
+  "All thoughts welcome here",
+  "One thing worth keeping:",
+  "How was your day?",
+] as const;
+
+const starterPrompt =
+  starterPrompts[Math.floor(Math.random() * starterPrompts.length)];
+
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <main>
     <section class="entry" aria-labelledby="page-title">
-      <h1 id="page-title">Tell me about your day</h1>
+      <h1 id="page-title">${starterPrompt}</h1>
 
       <form id="ingestion-form">
         <div class="text-entry">
@@ -41,10 +61,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
           type="submit"
           aria-hidden="true"
           tabindex="-1"
-        >remember this thought</button>
+        >remember this thought&nbsp; →</button>
       </form>
 
-      <div id="status" class="sr-only" role="status" aria-live="polite"></div>
+      <p id="status" class="status" role="alert" hidden></p>
     </section>
   </main>
 `;
@@ -166,6 +186,8 @@ textarea.addEventListener("input", () => {
   const hasText = Boolean(textarea.value.trim());
   const wasScrolledUp = textEntry.classList.contains("can-scroll-down");
 
+  status.hidden = true;
+  status.textContent = "";
   textEntry.classList.toggle("has-text", hasText);
 
   if (!hasText) {
@@ -183,7 +205,7 @@ textarea.addEventListener("input", () => {
       submitButton.classList.add("is-visible");
       submitButton.setAttribute("aria-hidden", "false");
       submitButton.tabIndex = 0;
-    }, 1000);
+    }, 500);
   }
 
   resizeTextarea();
@@ -219,8 +241,11 @@ form.addEventListener("submit", async (event) => {
   }
 
   submitButton.disabled = true;
+  submitButton.classList.add("is-loading");
+  submitButton.setAttribute("aria-busy", "true");
   textarea.disabled = true;
-  status.textContent = "Sending your thought to Headspace.";
+  status.hidden = true;
+  status.textContent = "";
 
   try {
     const response = await fetch(`${apiBaseUrl}/api/v1/ingestions`, {
@@ -243,8 +268,6 @@ form.addEventListener("submit", async (event) => {
       throw new Error(errorMessage(payload, response));
     }
 
-    const run = payload as IngestionRun;
-    status.textContent = `Ingestion run ${run.id} is ${run.status}.`;
     form.reset();
     textEntry.classList.remove("has-text");
     textarea.style.height = "auto";
@@ -260,9 +283,12 @@ form.addEventListener("submit", async (event) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Something went wrong.";
-    status.textContent = `Could not remember your thought. ${message}`;
+    status.textContent = `Couldn’t remember this thought. ${message} Please try again.`;
+    status.hidden = false;
   } finally {
     submitButton.disabled = false;
+    submitButton.classList.remove("is-loading");
+    submitButton.setAttribute("aria-busy", "false");
     textarea.disabled = false;
   }
 });
