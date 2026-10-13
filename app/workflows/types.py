@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, TypeAlias
 from uuid import UUID
 
@@ -83,6 +84,26 @@ class MemorySourceRecord:
     storage_object_key: str | None
     source_metadata: JsonObject
     source_idempotency_key: str
+
+
+IngestionRunStatus: TypeAlias = Literal[
+    "pending",
+    "processing",
+    "completed",
+    "failed",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class IngestionRunRecord:
+    id: UUID
+    workspace_id: UUID
+    source_id: UUID
+    status: IngestionRunStatus | str
+    result: JsonObject | None
+    error: JsonObject | None
+    created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
