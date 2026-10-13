@@ -1,3 +1,5 @@
 psycopg[binary]>=3,<4
 redis>=5,<9
 rq>=2,<3
+groq>=0.33,<2
+python-dotenv>=1,<2
