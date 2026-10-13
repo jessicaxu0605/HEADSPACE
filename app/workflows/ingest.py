@@ -16,6 +16,7 @@ from app.workflows.extract_proposed_subgraph import (
     extract_proposed_subgraph,
 )
 from app.workflows.prepare_source import prepare_source
+from app.workflows.resolve_proposed_subgraph import resolve_proposed_subgraph
 from app.workflows.types import (
     IngestionRunRecord,
     MemorySourceInput,
