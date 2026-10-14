@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { createManualIngestion } from "../api";
+import BlurredContainer from "./BlurredContainer";
 
 type TextEntryInterfaceProps = {
   sectionRef: RefObject<HTMLElement | null>;
@@ -302,38 +303,40 @@ export default function TextEntryInterface({
         </button>
       </form>
       <div className="notification-stack" aria-live="polite">
-        {notifications
-          .filter((notification) => notification.state !== "pending")
-          .map((notification) => (
-            <div
-              className={`notification ${notification.state}`}
-              key={notification.id}
-              role={notification.state === "error" ? "alert" : "status"}
-            >
-              <p>
-                {notification.state === "success"
+        {notifications.map((notification) => (
+          <BlurredContainer
+            blurredEdges={["top", "right", "bottom", "left"]}
+            edgeBlurSize={18}
+            className={`notification ${notification.state}`}
+            key={notification.id}
+            role={notification.state === "error" ? "alert" : "status"}
+          >
+            <p>
+              {notification.state === "pending"
+                ? "committing to memory"
+                : notification.state === "success"
                   ? "your memory is ready"
                   : notification.message}
-              </p>
-              <div className="notification-actions">
-                {notification.state === "error" && (
-                  <button
-                    type="button"
-                    onClick={() => retrySubmission(notification)}
-                  >
-                    retry
-                  </button>
-                )}
+            </p>
+            <div className="notification-actions">
+              {notification.state === "error" && (
                 <button
                   type="button"
-                  aria-label="Dismiss notification"
-                  onClick={() => dismissNotification(notification.id)}
+                  onClick={() => retrySubmission(notification)}
                 >
-                  dismiss
+                  retry
                 </button>
-              </div>
+              )}
+              <button
+                type="button"
+                aria-label="Dismiss notification"
+                onClick={() => dismissNotification(notification.id)}
+              >
+                dismiss
+              </button>
             </div>
-          ))}
+          </BlurredContainer>
+        ))}
       </div>
     </section>
   );

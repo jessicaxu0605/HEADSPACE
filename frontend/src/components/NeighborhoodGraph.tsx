@@ -127,9 +127,7 @@ export default function NeighborhoodGraph({
         source: edge.from_node_id,
         target: edge.to_node_id,
         edge_id: edge.edge_id,
-        label:
-          `${fromTitle} ${edge.relation_type.replaceAll("_", " ")} ${toTitle}` +
-          (edge.details ? ` — ${edge.details}` : ""),
+        label: `${fromTitle} ${edge.connector} ${toTitle}`,
         curvature,
       };
     });
@@ -177,23 +175,33 @@ export default function NeighborhoodGraph({
     setHoveredNodeId(null);
   }, [graphData]);
 
-  // Width of the canvas's left edge currently covered by the overlay, if any.
-  const overlayInset = (): number => {
+  // Space hidden by the overlay. Wide cards reserve room above the graph on
+  // narrow screens; narrower cards reserve room to the left on wide screens.
+  const overlayInsets = (): { left: number; top: number } => {
     const container = containerRef.current;
     const overlay = overlayRef?.current;
-    if (!container || !overlay) return 0;
+    if (!container || !overlay) return { left: 0, top: 0 };
 
     const containerRect = container.getBoundingClientRect();
     const overlayRect = overlay.getBoundingClientRect();
-    const overlapsVertically =
-      overlayRect.bottom > containerRect.top &&
-      overlayRect.top < containerRect.bottom;
-    if (!overlapsVertically) return 0;
-
-    return Math.max(
+    const overlapWidth = Math.max(
       0,
-      Math.min(overlayRect.right, containerRect.right) - containerRect.left,
+      Math.min(overlayRect.right, containerRect.right) -
+        Math.max(overlayRect.left, containerRect.left),
     );
+    const overlapHeight = Math.max(
+      0,
+      Math.min(overlayRect.bottom, containerRect.bottom) -
+        Math.max(overlayRect.top, containerRect.top),
+    );
+    if (overlapWidth === 0 || overlapHeight === 0) {
+      return { left: 0, top: 0 };
+    }
+
+    const isTopOverlay = overlapWidth >= containerRect.width * 0.75;
+    return isTopOverlay
+      ? { left: 0, top: overlapHeight }
+      : { left: overlapWidth, top: 0 };
   };
 
   const fitToVisibleArea = () => {
@@ -201,9 +209,15 @@ export default function NeighborhoodGraph({
     const bbox = forceGraph?.getGraphBbox();
     if (!forceGraph || !bbox) return;
 
-    const inset = overlayInset();
-    const availableWidth = Math.max(size.width - inset - FIT_PADDING * 2, 1);
-    const availableHeight = Math.max(size.height - FIT_PADDING * 2, 1);
+    const insets = overlayInsets();
+    const availableWidth = Math.max(
+      size.width - insets.left - FIT_PADDING * 2,
+      1,
+    );
+    const availableHeight = Math.max(
+      size.height - insets.top - FIT_PADDING * 2,
+      1,
+    );
     const graphWidth = Math.max(bbox.x[1] - bbox.x[0], 1);
     const graphHeight = Math.max(bbox.y[1] - bbox.y[0], 1);
     const zoom = Math.min(
@@ -215,8 +229,8 @@ export default function NeighborhoodGraph({
     // Shift the view so the graph is centred in the part the overlay leaves free.
     forceGraph.zoom(zoom, 0);
     forceGraph.centerAt(
-      (bbox.x[0] + bbox.x[1]) / 2 - inset / 2 / zoom,
-      (bbox.y[0] + bbox.y[1]) / 2,
+      (bbox.x[0] + bbox.x[1]) / 2 - insets.left / 2 / zoom,
+      (bbox.y[0] + bbox.y[1]) / 2 - insets.top / 2 / zoom,
       0,
     );
   };

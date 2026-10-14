@@ -4,6 +4,7 @@ import type {
   MemoryEdgeDetail,
   MemoryNodeReference,
 } from "../memory_graph";
+import BlurredContainer from "./BlurredContainer";
 
 type RelationshipPageProps = {
   edgeId: string;
@@ -71,7 +72,7 @@ export default function RelationshipPage({
     return () => request.abort();
   }, [edgeId]);
 
-  const relationLabel = edge ? humanize(edge.relation_type) : "";
+  const relationLabel = edge?.connector ?? "";
 
   return (
     <section
@@ -81,7 +82,11 @@ export default function RelationshipPage({
       aria-labelledby="relationship-title"
     >
       <div className="relationship-inner">
-        <div className="relationship-topbar">
+        <BlurredContainer
+          blurredEdges={["bottom"]}
+          edgeBlurSize={20}
+          className="relationship-topbar"
+        >
           <button
             ref={backButtonRef}
             className="graph-back"
@@ -90,7 +95,7 @@ export default function RelationshipPage({
           >
             ← back to graph
           </button>
-        </div>
+        </BlurredContainer>
 
         {status && (
           <p

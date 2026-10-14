@@ -26,6 +26,7 @@ export type MemoryGraphEdge = {
   from_node_id: string;
   to_node_id: string;
   relation_type: string;
+  connector: string;
   strength: number;
   confidence: number;
   details: string | null;
@@ -66,6 +67,7 @@ export type MemoryEdgeDetail = {
   relation_type: string;
   inverse_relation_type: string;
   relation_description: string | null;
+  connector: string;
   is_symmetric: boolean;
   details: string | null;
   strength: number;

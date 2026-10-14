@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { NodeNeighborhoodResponse, NodeQueryMatch } from "../api";
 import type { MemoryNodeReference } from "../memory_graph";
+import BlurredContainer from "./BlurredContainer";
 import NeighborhoodGraph from "./NeighborhoodGraph";
 import RelationshipPage from "./RelationshipPage";
 
@@ -119,11 +120,15 @@ export default function ResultInterface({
         aria-live="polite"
         inert={openEdgeId !== null}
       >
-        <div className="graph-topbar">
+        <BlurredContainer
+          blurredEdges={["bottom"]}
+          edgeBlurSize={24}
+          className="graph-topbar"
+        >
           <button className="graph-back" type="button" onClick={onBack}>
             ← back to results
           </button>
-        </div>
+        </BlurredContainer>
         {graphStatus && (
           <p
             className={`graph-status${
@@ -136,7 +141,13 @@ export default function ResultInterface({
         )}
         {graph && (
           <div className="graph-body">
-            <header className="graph-header" ref={graphHeaderRef}>
+            <BlurredContainer
+              as="header"
+              blurredEdges={["top", "right", "bottom", "left"]}
+              edgeBlurSize={28}
+              className="graph-header"
+              ref={graphHeaderRef}
+            >
               <p className="graph-kicker">
                 {startNode?.node_type ?? graphSelection.node_type}
               </p>
@@ -146,7 +157,7 @@ export default function ResultInterface({
               {startNode?.summary && (
                 <p className="graph-summary">{startNode.summary}</p>
               )}
-            </header>
+            </BlurredContainer>
 
             <section className="graph-section">
               {connectedCount === 0 ? (
