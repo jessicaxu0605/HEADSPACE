@@ -56,14 +56,13 @@ export default function TextEntryInterface({
   onViewRun,
 }: TextEntryInterfaceProps) {
   const [content, setContent] = useState("");
-  const [notifications, setNotifications] = useState<
-    SubmissionNotification[]
-  >([]);
+  const [notifications, setNotifications] = useState<SubmissionNotification[]>(
+    [],
+  );
   const [showSubmit, setShowSubmit] = useState(false);
   const [scrollFades, setScrollFades] = useState({ up: false, down: false });
   const revealButtonTimeoutRef = useRef<number | undefined>(undefined);
   const autoScrollFrameRef = useRef<number | undefined>(undefined);
-  const notificationTimeoutsRef = useRef(new Map<string, number>());
   const isMountedRef = useRef(true);
   const keepBottomFadeHiddenRef = useRef(false);
   const hasText = Boolean(content.trim());
@@ -163,9 +162,6 @@ export default function TextEntryInterface({
       if (autoScrollFrameRef.current !== undefined) {
         window.cancelAnimationFrame(autoScrollFrameRef.current);
       }
-      notificationTimeoutsRef.current.forEach((timeout) =>
-        window.clearTimeout(timeout),
-      );
     };
   }, []);
 
@@ -180,9 +176,6 @@ export default function TextEntryInterface({
   };
 
   const dismissNotification = useCallback((id: string): void => {
-    const timeout = notificationTimeoutsRef.current.get(id);
-    if (timeout !== undefined) window.clearTimeout(timeout);
-    notificationTimeoutsRef.current.delete(id);
     setNotifications((current) =>
       current.filter((notification) => notification.id !== id),
     );
@@ -196,23 +189,18 @@ export default function TextEntryInterface({
           request.requestId,
         );
         if (!isMountedRef.current) return;
-        setNotifications((current) =>
-          current.map((notification) =>
-            notification.id === request.id
-              ? {
-                  ...notification,
-                  state: "success",
-                  message: undefined,
-                  runId: run.id,
-                }
-              : notification,
-          ),
-        );
-        const timeout = window.setTimeout(
-          () => dismissNotification(request.id),
-          6000,
-        );
-        notificationTimeoutsRef.current.set(request.id, timeout);
+        // The pending notice goes away and a separate ready notice takes its
+        // place; the ready notice stays until the reader dismisses it.
+        setNotifications((current) => [
+          ...current.filter((notification) => notification.id !== request.id),
+          {
+            ...request,
+            id: `${request.id}:ready`,
+            state: "success",
+            message: undefined,
+            runId: run.id,
+          },
+        ]);
       } catch (error) {
         if (!isMountedRef.current) return;
         const message =
@@ -226,7 +214,7 @@ export default function TextEntryInterface({
         );
       }
     },
-    [dismissNotification],
+    [],
   );
 
   const retrySubmission = (notification: SubmissionNotification): void => {
@@ -324,9 +312,9 @@ export default function TextEntryInterface({
           >
             <p>
               {notification.state === "pending"
-                ? "committing to memory"
+                ? "committing to memory..."
                 : notification.state === "success"
-                  ? "your memory is ready"
+                  ? "your memory is ready!"
                   : notification.message}
             </p>
             <div className="notification-actions">

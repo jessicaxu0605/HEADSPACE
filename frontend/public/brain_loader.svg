@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 820 840" width="200" height="205">
+  <style>.s{stroke-dasharray:1 1.02;stroke-dashoffset:1.01}@keyframes k-outline{0%,0.00%{stroke-dashoffset:1.01;opacity:0}0.10%{opacity:1}40.00%,52.00%{stroke-dashoffset:0;opacity:1}91.90%{opacity:1}92.00%,100%{stroke-dashoffset:1.01;opacity:0}}.outline{animation:k-outline 5.0s ease-in-out infinite}@keyframes k-center{0%,0.00%{stroke-dashoffset:1.01;opacity:0}0.10%{opacity:1}40.00%,52.00%{stroke-dashoffset:0;opacity:1}91.90%{opacity:1}92.00%,100%{stroke-dashoffset:1.01;opacity:0}}.center{animation:k-center 5.0s ease-in-out infinite}@keyframes k-f0{0%,5.88%{stroke-dashoffset:1.01;opacity:0}5.98%{opacity:1}15.88%,76.12%{stroke-dashoffset:0;opacity:1}86.02%{opacity:1}86.12%,100%{stroke-dashoffset:1.01;opacity:0}}.f0{animation:k-f0 5.0s ease-in-out infinite}@keyframes k-f1{0%,9.84%{stroke-dashoffset:1.01;opacity:0}9.94%{opacity:1}19.84%,72.16%{stroke-dashoffset:0;opacity:1}82.06%{opacity:1}82.16%,100%{stroke-dashoffset:1.01;opacity:0}}.f1{animation:k-f1 5.0s ease-in-out infinite}@keyframes k-f2{0%,13.61%{stroke-dashoffset:1.01;opacity:0}13.71%{opacity:1}23.61%,68.39%{stroke-dashoffset:0;opacity:1}78.29%{opacity:1}78.39%,100%{stroke-dashoffset:1.01;opacity:0}}.f2{animation:k-f2 5.0s ease-in-out infinite}@keyframes k-f3{0%,14.93%{stroke-dashoffset:1.01;opacity:0}15.03%{opacity:1}24.93%,67.07%{stroke-dashoffset:0;opacity:1}76.97%{opacity:1}77.07%,100%{stroke-dashoffset:1.01;opacity:0}}.f3{animation:k-f3 5.0s ease-in-out infinite}@keyframes k-f4{0%,18.24%{stroke-dashoffset:1.01;opacity:0}18.34%{opacity:1}28.24%,63.76%{stroke-dashoffset:0;opacity:1}73.66%{opacity:1}73.76%,100%{stroke-dashoffset:1.01;opacity:0}}.f4{animation:k-f4 5.0s ease-in-out infinite}@keyframes k-f5{0%,20.20%{stroke-dashoffset:1.01;opacity:0}20.30%{opacity:1}30.20%,61.80%{stroke-dashoffset:0;opacity:1}71.70%{opacity:1}71.80%,100%{stroke-dashoffset:1.01;opacity:0}}.f5{animation:k-f5 5.0s ease-in-out infinite}@keyframes k-f6{0%,21.71%{stroke-dashoffset:1.01;opacity:0}21.81%{opacity:1}31.71%,60.29%{stroke-dashoffset:0;opacity:1}70.19%{opacity:1}70.29%,100%{stroke-dashoffset:1.01;opacity:0}}.f6{animation:k-f6 5.0s ease-in-out infinite}@keyframes k-f7{0%,25.93%{stroke-dashoffset:1.01;opacity:0}26.03%{opacity:1}35.93%,56.07%{stroke-dashoffset:0;opacity:1}65.97%{opacity:1}66.07%,100%{stroke-dashoffset:1.01;opacity:0}}.f7{animation:k-f7 5.0s ease-in-out infinite}@media (prefers-reduced-motion:reduce){.s{animation:none!important;stroke-dashoffset:0;opacity:1}}</style>
+  <g fill="none" stroke="#aaa7a0" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <g>
+      <path class="s outline" pathLength="1" d="M410 700 C408 725 398 750 380 765 C340 795 260 785 235 748 C165 725 145 665 150 618 C130 615 110 608 92 592 C72 560 80 525 112 505 C92 495 80 470 78 440 C75 410 95 375 130 368 C112 360 100 340 100 310 C100 255 150 215 200 220 C190 175 205 128 240 105 C290 70 380 70 408 98"/>
+      <path class="s f0" pathLength="1" d="M308 710 C300 655 255 620 212 612"/>
+      <path class="s f1" pathLength="1" d="M240 605 C241 598 242 590 245 575 C255 535 290 512 335 510"/>
+      <path class="s f2" pathLength="1" d="M112 505 C135 512 160 515 182 516"/>
+      <path class="s f3" pathLength="1" d="M195 470 C230 465 255 440 262 402"/>
+      <path class="s f4" pathLength="1" d="M330 382 C310 392 285 398 255 400 C215 402 185 375 180 322"/>
+      <path class="s f5" pathLength="1" d="M290 330 C290 250 250 215 200 220"/>
+      <path class="s f6" pathLength="1" d="M405 290 C395 273 375 266 350 268"/>
+      <path class="s f7" pathLength="1" d="M312 178 C315 158 305 140 285 132"/>
+    </g>
+    <g transform="translate(820 0) scale(-1 1)">
+      <path class="s outline" pathLength="1" d="M410 700 C408 725 398 750 380 765 C340 795 260 785 235 748 C165 725 145 665 150 618 C130 615 110 608 92 592 C72 560 80 525 112 505 C92 495 80 470 78 440 C75 410 95 375 130 368 C112 360 100 340 100 310 C100 255 150 215 200 220 C190 175 205 128 240 105 C290 70 380 70 408 98"/>
+      <path class="s f0" pathLength="1" d="M308 710 C300 655 255 620 212 612"/>
+      <path class="s f1" pathLength="1" d="M240 605 C241 598 242 590 245 575 C255 535 290 512 335 510"/>
+      <path class="s f2" pathLength="1" d="M112 505 C135 512 160 515 182 516"/>
+      <path class="s f3" pathLength="1" d="M195 470 C230 465 255 440 262 402"/>
+      <path class="s f4" pathLength="1" d="M330 382 C310 392 285 398 255 400 C215 402 185 375 180 322"/>
+      <path class="s f5" pathLength="1" d="M290 330 C290 250 250 215 200 220"/>
+      <path class="s f6" pathLength="1" d="M405 290 C395 273 375 266 350 268"/>
+      <path class="s f7" pathLength="1" d="M312 178 C315 158 305 140 285 132"/>
+    </g>
+    <path class="s center" pathLength="1" d="M410 740 L410 98"/>
+  </g>
+</svg>

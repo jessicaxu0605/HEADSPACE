@@ -5,6 +5,10 @@ import {
   type NodeNeighborhoodResponse,
 } from "../api";
 import type { MemoryNodeReference, MemoryRunGraph } from "../memory_graph";
+import {
+  waitForBrainLoaderFade,
+  waitForBrainLoaderLeadIn,
+} from "../loading";
 
 // The graph page centers on one node, or shows everything one ingestion run touched.
 export type GraphSelection =
@@ -114,6 +118,7 @@ export default function useNeighborhoodExplorer() {
 
   const open = useCallback(
     async (nextSelection: MemoryNodeReference): Promise<void> => {
+      const loaderStartedAt = performance.now();
       graphControllerRef.current?.abort();
       const request = new AbortController();
       graphControllerRef.current = request;
@@ -129,8 +134,11 @@ export default function useNeighborhoodExplorer() {
           depth: 2,
           signal: request.signal,
         });
+        await waitForBrainLoaderLeadIn(loaderStartedAt);
         if (graphControllerRef.current !== request) return;
         setGraph(payload);
+        await waitForBrainLoaderFade();
+        if (graphControllerRef.current !== request) return;
         setStatus("");
         setStatusIsError(false);
       } catch (error) {
@@ -152,6 +160,7 @@ export default function useNeighborhoodExplorer() {
 
   const openRun = useCallback(
     async (runId: string): Promise<void> => {
+      const loaderStartedAt = performance.now();
       graphControllerRef.current?.abort();
       const request = new AbortController();
       graphControllerRef.current = request;
@@ -166,8 +175,11 @@ export default function useNeighborhoodExplorer() {
         const payload = await getIngestionGraph(runId, {
           signal: request.signal,
         });
+        await waitForBrainLoaderLeadIn(loaderStartedAt);
         if (graphControllerRef.current !== request) return;
         setGraph(runGraphToNeighborhood(payload));
+        await waitForBrainLoaderFade();
+        if (graphControllerRef.current !== request) return;
         setStatus("");
         setStatusIsError(false);
       } catch (error) {

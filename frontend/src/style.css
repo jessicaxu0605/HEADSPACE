@@ -219,6 +219,29 @@ html {
   opacity: 0.55;
 }
 
+.brain-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.brain-loader img {
+  display: block;
+  width: clamp(56px, 6vw, 80px);
+  height: auto;
+}
+
+.brain-loader.is-fading {
+  animation: brain-loader-fade-out 400ms ease-out both;
+}
+
+.is-revealing {
+  animation: content-reveal 400ms ease-out both;
+}
+
 .graph-header {
   padding: 14px 0 12px;
   border-bottom: 1px solid #d8d5ce;
@@ -762,6 +785,26 @@ textarea:focus {
   }
 }
 
+@keyframes brain-loader-fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes content-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes search-pulse {
   from {
     opacity: 0.35;
@@ -809,11 +852,6 @@ textarea:focus {
 
 .relationship-header .graph-title {
   overflow-wrap: anywhere;
-}
-
-.relationship-verb {
-  color: #8c8981;
-  font-style: italic;
 }
 
 .relationship-details,
@@ -1117,6 +1155,8 @@ textarea:focus {
   .notification,
   .search-result,
   .graph-view,
+  .brain-loader.is-fading,
+  .is-revealing,
   .relationship-page,
   .search-form.is-loading .search-icon {
     animation: none;

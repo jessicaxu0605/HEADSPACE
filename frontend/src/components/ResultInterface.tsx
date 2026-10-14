@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { NodeNeighborhoodResponse, NodeQueryMatch } from "../api";
 import type { GraphSelection } from "../hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "../memory_graph";
+import BrainLoader from "./BrainLoader";
 import BlurredContainer from "./BlurredContainer";
 import NeighborhoodGraph from "./NeighborhoodGraph";
 import RelationshipPage from "./RelationshipPage";
@@ -137,7 +143,12 @@ export default function ResultInterface({
             {isRunView ? "← back" : "← back to results"}
           </button>
         </BlurredContainer>
-        {graphStatus && (
+        {graphLoading ? (
+          <BrainLoader
+            fading={graph !== null}
+            label={graphStatus || "Loading graph…"}
+          />
+        ) : graphStatus ? (
           <p
             className={`graph-status${
               graphStatusIsError ? " error-message" : ""
@@ -146,9 +157,9 @@ export default function ResultInterface({
           >
             {graphStatus}
           </p>
-        )}
+        ) : null}
         {graph && (
-          <div className="graph-body">
+          <div className="graph-body is-revealing">
             <BlurredContainer
               as="header"
               blurredEdges={["top", "right", "bottom", "left"]}
@@ -158,7 +169,6 @@ export default function ResultInterface({
             >
               {graphSelection.kind === "run" ? (
                 <>
-                  <p className="graph-kicker">new memory</p>
                   <h2 className="graph-title">what you just shared</h2>
                   <p className="graph-summary">
                     {runNodeCount === 1
@@ -201,10 +211,7 @@ export default function ResultInterface({
                 }`}
                 role={expandNoticeIsError ? "alert" : undefined}
               >
-                {expandNotice ||
-                  (isRunView
-                    ? "everything this memory touched"
-                    : `within ${graph.depth} ${graph.depth === 1 ? "degree" : "degrees"}`)}
+                {expandNotice}
               </p>
             </section>
           </div>

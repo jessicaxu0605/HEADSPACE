@@ -4,6 +4,11 @@ import type {
   MemoryEdgeDetail,
   MemoryNodeReference,
 } from "../memory_graph";
+import {
+  waitForBrainLoaderFade,
+  waitForBrainLoaderLeadIn,
+} from "../loading";
+import BrainLoader from "./BrainLoader";
 import BlurredContainer from "./BlurredContainer";
 
 type RelationshipPageProps = {
@@ -51,14 +56,19 @@ export default function RelationshipPage({
   }, [onBack]);
 
   useEffect(() => {
+    const loaderStartedAt = performance.now();
     const request = new AbortController();
     setEdge(null);
     setStatus("gathering this relationship…");
     setStatusIsError(false);
 
     getEdgeDetail(edgeId, { signal: request.signal })
-      .then((payload) => {
+      .then(async (payload) => {
+        await waitForBrainLoaderLeadIn(loaderStartedAt);
+        if (request.signal.aborted) return;
         setEdge(payload);
+        await waitForBrainLoaderFade();
+        if (request.signal.aborted) return;
         setStatus("");
       })
       .catch((error: unknown) => {
@@ -97,10 +107,16 @@ export default function RelationshipPage({
           </button>
         </BlurredContainer>
 
-        {status && (
+        {status && !statusIsError && (
+          <BrainLoader
+            fading={edge !== null}
+            label={status}
+          />
+        )}
+        {statusIsError && (
           <p
-            className={`graph-status${statusIsError ? " error-message" : ""}`}
-            role={statusIsError ? "alert" : "status"}
+            className="graph-status error-message"
+            role="alert"
           >
             {status}
           </p>
@@ -113,7 +129,7 @@ export default function RelationshipPage({
         )}
 
         {edge && (
-          <article className="relationship-body">
+          <article className="relationship-body is-revealing">
             <header className="relationship-header">
               <h2 id="relationship-title" className="graph-title">
                 <button
@@ -123,7 +139,7 @@ export default function RelationshipPage({
                 >
                   {edge.from_node.title}
                 </button>{" "}
-                <span className="relationship-verb">{relationLabel}</span>{" "}
+                <span>{relationLabel}</span>{" "}
                 <button
                   className="relationship-entity"
                   type="button"
