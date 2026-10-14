@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.workflows.relation_types import (
+from app.workflows.ingest.relation_types import (
     RelationDefinition,
     is_more_specific_relation,
     validate_relation_definitions,

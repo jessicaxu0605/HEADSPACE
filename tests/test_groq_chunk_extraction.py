@@ -12,7 +12,7 @@ from uuid import uuid4
 import httpx
 from groq import BadRequestError
 
-from app.workflows.groq_chunk_extraction import (
+from app.workflows.ingest.groq_chunk_extraction import (
     CHUNK_EXTRACTION_OUTPUT_SCHEMA,
     GroqChunkExtractionLLM,
     MalformedChunkExtractionResponseError,
@@ -20,8 +20,8 @@ from app.workflows.groq_chunk_extraction import (
     build_chunk_extraction_output_schema,
     parse_chunk_extraction_output,
 )
-from app.workflows.relation_types import RelationDefinition
-from app.workflows.types import (
+from app.workflows.ingest.relation_types import RelationDefinition
+from app.workflows.ingest.types import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
     ChunkExtractionRepairContext,
@@ -244,7 +244,7 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
 
     def test_configures_sdk_transport_retries(self) -> None:
         with patch(
-            "app.workflows.groq_chunk_extraction.AsyncGroq"
+            "app.workflows.ingest.groq_chunk_extraction.AsyncGroq"
         ) as async_groq:
             GroqChunkExtractionLLM(
                 relation_definitions=TEST_RELATION_DEFINITIONS,
@@ -266,7 +266,7 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
                 env_file.write("GROQ_API_KEY=local-test-key\n")
 
             with patch.dict(os.environ, {}, clear=True), patch(
-                "app.workflows.groq_chunk_extraction.AsyncGroq"
+                "app.workflows.ingest.groq_chunk_extraction.AsyncGroq"
             ) as async_groq:
                 GroqChunkExtractionLLM(
                     relation_definitions=TEST_RELATION_DEFINITIONS,
@@ -284,7 +284,7 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
             with patch.dict(
                 os.environ, {"GROQ_API_KEY": "process-test-key"}, clear=True
             ), patch(
-                "app.workflows.groq_chunk_extraction.AsyncGroq"
+                "app.workflows.ingest.groq_chunk_extraction.AsyncGroq"
             ) as async_groq:
                 GroqChunkExtractionLLM(
                     relation_definitions=TEST_RELATION_DEFINITIONS,

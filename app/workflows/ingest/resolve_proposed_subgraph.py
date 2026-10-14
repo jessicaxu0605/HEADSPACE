@@ -16,12 +16,12 @@ import re
 from typing import Literal, Protocol, TypeAlias
 from uuid import UUID, uuid4
 
-from app.workflows.relation_types import (
+from app.workflows.ingest.relation_types import (
     RelationDefinition,
     canonicalize_relation_type,
     relation_ancestors,
 )
-from app.workflows.types import (
+from app.workflows.ingest.types import (
     JsonObject,
     NodeType,
     ProposedEdge,

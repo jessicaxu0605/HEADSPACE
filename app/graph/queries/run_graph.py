@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Protocol
 from uuid import UUID
 
-from app.workflows.query_edge_detail import EdgeStatus
+from app.graph.queries.edge_detail import EdgeStatus
 
 
 RunGraphChangeKind = Literal["created", "updated", "archived", "merged"]

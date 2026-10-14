@@ -19,14 +19,14 @@ from uuid import UUID
 from dotenv import dotenv_values
 from groq import AsyncGroq, BadRequestError
 
-from app.workflows.relation_types import (
+from app.workflows.ingest.relation_types import (
     RelationDefinition,
     extractable_relation_types,
     relation_catalog_prompt,
     validate_relation_definitions,
 )
-from app.workflows.resolve_proposed_subgraph import _with_email_identity
-from app.workflows.types import (
+from app.workflows.ingest.resolve_proposed_subgraph import _with_email_identity
+from app.workflows.ingest.types import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
     ChunkExtractionRepairContext,
@@ -44,7 +44,7 @@ from app.workflows.types import (
 
 
 DEFAULT_GROQ_EXTRACTION_MODEL = "openai/gpt-oss-120b"
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
+DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[3] / ".env.local"
 
 
 class MalformedChunkExtractionResponseError(ValueError):

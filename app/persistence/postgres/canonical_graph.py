@@ -5,15 +5,15 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.db import get_async_connection, get_connection
-from app.workflows.relation_types import RelationDefinition
-from app.workflows.resolve_proposed_subgraph import (
+from app.workflows.ingest.relation_types import RelationDefinition
+from app.workflows.ingest.resolve_proposed_subgraph import (
     CanonicalEdge,
     CanonicalNode,
     NodeCandidate,
     RelationType,
     SimpleCanonicalGraphResolverStore,
 )
-from app.workflows.types import NodeType, ProposedExternalId, ProposedNode
+from app.workflows.ingest.types import NodeType, ProposedExternalId, ProposedNode
 
 
 _RELATION_COLUMNS = """

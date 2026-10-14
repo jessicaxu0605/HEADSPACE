@@ -4,7 +4,7 @@ import unittest
 from collections.abc import Iterable
 from uuid import UUID, uuid4
 
-from app.workflows.resolve_proposed_subgraph import (
+from app.workflows.ingest.resolve_proposed_subgraph import (
     ArchiveCanonicalEdge,
     CanonicalEdge,
     CanonicalNode,
@@ -18,7 +18,7 @@ from app.workflows.resolve_proposed_subgraph import (
     UpdateCanonicalNodeTitle,
     resolve_proposed_subgraph,
 )
-from app.workflows.types import (
+from app.workflows.ingest.types import (
     ProposedEdge,
     ProposedEvidence,
     ProposedEvidenceAnnotation,

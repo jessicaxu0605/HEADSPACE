@@ -10,7 +10,7 @@ from html import unescape
 from typing import Any
 
 from app.storage import read_storage_object
-from app.workflows.types import (
+from app.workflows.ingest.types import (
     MAX_LOAD_ALL_BYTES,
     ChunkLocation,
     ExtractionSourceContext,

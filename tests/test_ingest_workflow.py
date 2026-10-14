@@ -6,20 +6,20 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-from app.workflows.ingest import (
+from app.workflows.ingest.workflow import (
     _get_relation_type,
     _persist_review_items,
     IngestionExecutionError,
     StaleTransactionPlanError,
     ingest_content,
 )
-from app.workflows.resolve_proposed_subgraph import (
+from app.workflows.ingest.resolve_proposed_subgraph import (
     CanonicalNode,
     ResolutionTransactionPlan,
     ResolveRepairItem,
     SimpleCanonicalGraphResolverStore,
 )
-from app.workflows.types import (
+from app.workflows.ingest.types import (
     ExtractionContext,
     IngestionRunRecord,
     MemorySourceRecord,
@@ -193,22 +193,24 @@ class IngestWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 error=error,
             )
 
-        with patch("app.workflows.ingest.write_storage_object"), patch(
-            "app.workflows.ingest.create_memory_source", return_value=source
+        with patch("app.workflows.ingest.workflow.write_storage_object"), patch(
+            "app.workflows.ingest.workflow.create_memory_source",
+            return_value=source,
         ), patch(
-            "app.workflows.ingest._get_or_create_ingestion_run",
+            "app.workflows.ingest.workflow._get_or_create_ingestion_run",
             return_value=pending_run,
         ), patch(
-            "app.workflows.ingest._set_source_preparation_status"
+            "app.workflows.ingest.workflow._set_source_preparation_status"
         ), patch(
-            "app.workflows.ingest._update_ingestion_run", side_effect=update_run
+            "app.workflows.ingest.workflow._update_ingestion_run",
+            side_effect=update_run,
         ), patch(
-            "app.workflows.ingest.prepare_source", return_value=object()
+            "app.workflows.ingest.workflow.prepare_source", return_value=object()
         ), patch(
-            "app.workflows.ingest.extract_proposed_subgraph",
+            "app.workflows.ingest.workflow.extract_proposed_subgraph",
             new=AsyncMock(return_value=extraction),
         ), patch(
-            "app.workflows.ingest.apply_transaction_plan",
+            "app.workflows.ingest.workflow.apply_transaction_plan",
             side_effect=lambda *, run_id, plan, result: replace(
                 pending_run,
                 status="completed",
@@ -273,25 +275,27 @@ class IngestWorkflowTests(unittest.IsolatedAsyncioTestCase):
                 error=error,
             )
 
-        with patch("app.workflows.ingest.write_storage_object"), patch(
-            "app.workflows.ingest.create_memory_source", return_value=source
+        with patch("app.workflows.ingest.workflow.write_storage_object"), patch(
+            "app.workflows.ingest.workflow.create_memory_source",
+            return_value=source,
         ), patch(
-            "app.workflows.ingest._get_or_create_ingestion_run",
+            "app.workflows.ingest.workflow._get_or_create_ingestion_run",
             return_value=pending_run,
         ), patch(
-            "app.workflows.ingest._set_source_preparation_status"
+            "app.workflows.ingest.workflow._set_source_preparation_status"
         ), patch(
-            "app.workflows.ingest._update_ingestion_run", side_effect=update_run
+            "app.workflows.ingest.workflow._update_ingestion_run",
+            side_effect=update_run,
         ), patch(
-            "app.workflows.ingest.prepare_source", return_value=object()
+            "app.workflows.ingest.workflow.prepare_source", return_value=object()
         ), patch(
-            "app.workflows.ingest.extract_proposed_subgraph",
+            "app.workflows.ingest.workflow.extract_proposed_subgraph",
             new=AsyncMock(return_value=extraction),
         ), patch(
-            "app.workflows.ingest.apply_transaction_plan",
+            "app.workflows.ingest.workflow.apply_transaction_plan",
             side_effect=RuntimeError("edge write failed"),
         ), patch(
-            "app.workflows.ingest._persist_ingestion_failure"
+            "app.workflows.ingest.workflow._persist_ingestion_failure"
         ) as persist_failure:
             with self.assertRaises(IngestionExecutionError):
                 await ingest_content(

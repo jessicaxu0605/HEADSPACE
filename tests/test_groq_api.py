@@ -8,14 +8,14 @@ from uuid import uuid4
 from dotenv import dotenv_values
 from groq import AsyncGroq
 
-from app.workflows.groq_chunk_extraction import (
+from app.workflows.ingest.groq_chunk_extraction import (
     DEFAULT_GROQ_EXTRACTION_MODEL,
     DEFAULT_LOCAL_ENV_PATH,
     GroqChunkExtractionLLM,
 )
-from app.workflows.extract_proposed_subgraph import extract_proposed_subgraph
-from app.workflows.postgres_canonical_graph import load_active_relation_types
-from app.workflows.types import (
+from app.workflows.ingest.extract_proposed_subgraph import extract_proposed_subgraph
+from app.persistence.postgres.canonical_graph import load_active_relation_types
+from app.workflows.ingest.types import (
     ExtractionSourceContext,
     PreparedSource,
     SourceChunk,

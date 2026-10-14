@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.db import DEFAULT_DEVELOPMENT_WORKSPACE_ID
 from app.main import app, get_run_graph_store
-from app.workflows.query_run_graph import RunGraph, RunGraphEdge, RunGraphNode
+from app.graph.queries.run_graph import RunGraph, RunGraphEdge, RunGraphNode
 
 
 class FakeRunGraphStore:

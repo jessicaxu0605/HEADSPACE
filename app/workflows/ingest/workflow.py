@@ -13,12 +13,12 @@ from psycopg.types.json import Jsonb
 from app.db import get_connection
 from app.serialization import to_jsonable
 from app.storage import write_storage_object
-from app.workflows.extract_proposed_subgraph import (
+from app.workflows.ingest.extract_proposed_subgraph import (
     ChunkExtractionLLM,
     extract_proposed_subgraph,
 )
-from app.workflows.prepare_source import prepare_source
-from app.workflows.resolve_proposed_subgraph import (
+from app.workflows.ingest.prepare_source import prepare_source
+from app.workflows.ingest.resolve_proposed_subgraph import (
     ArchiveCanonicalEdge,
     CanonicalGraphResolverStore,
     CreateCanonicalNode,
@@ -32,7 +32,7 @@ from app.workflows.resolve_proposed_subgraph import (
     merge_edge_details,
     resolve_proposed_subgraph,
 )
-from app.workflows.types import (
+from app.workflows.ingest.types import (
     IngestionRunRecord,
     MemorySourceInput,
     MemorySourceRecord,
@@ -321,7 +321,7 @@ class StaleTransactionPlanError(RuntimeError):
 def _postgres_resolver_store() -> CanonicalGraphResolverStore:
     # Keep the resolution policy module persistence-agnostic while making live
     # PostgreSQL reads the default for production ingestion.
-    from app.workflows.postgres_canonical_graph import (
+    from app.persistence.postgres.canonical_graph import (
         PostgresCanonicalGraphResolverStore,
     )
 

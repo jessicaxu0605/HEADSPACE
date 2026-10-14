@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 
 from app.main import app, get_resolver_store
-from app.workflows.resolve_proposed_subgraph import CanonicalNode, NodeCandidate
+from app.workflows.ingest.resolve_proposed_subgraph import CanonicalNode, NodeCandidate
 
 
 class FakeResolverStore:

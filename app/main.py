@@ -22,37 +22,37 @@ from app.db import (
     close_async_pool,
     open_async_pool,
 )
-from app.workflows.extract_proposed_subgraph import ChunkExtractionLLM
-from app.workflows.groq_chunk_extraction import GroqChunkExtractionLLM
-from app.workflows.ingest import (
-    IngestionExecutionError,
-    get_ingestion_run,
-    ingest_content,
-)
-from app.workflows.postgres_canonical_graph import (
-    PostgresCanonicalGraphResolverStore,
-    load_active_relation_types,
-)
-from app.workflows.postgres_edge_detail import PostgresEdgeDetailStore
-from app.workflows.postgres_node_neighborhood import PostgresNodeNeighborhoodStore
-from app.workflows.postgres_run_graph import PostgresRunGraphStore
-from app.workflows.query_edge_detail import EdgeDetailStore, EdgeStatus
-from app.workflows.query_node_neighborhood import NodeNeighborhoodStore
-from app.workflows.query_run_graph import (
+from app.graph.queries.edge_detail import EdgeDetailStore, EdgeStatus
+from app.graph.queries.node_neighborhood import NodeNeighborhoodStore
+from app.graph.queries.run_graph import (
     RunGraphChangeKind,
     RunGraphStore,
     RunNodeStatus,
 )
-from app.workflows.resolve_proposed_subgraph import (
+from app.persistence.postgres.canonical_graph import (
+    PostgresCanonicalGraphResolverStore,
+    load_active_relation_types,
+)
+from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
+from app.persistence.postgres.node_neighborhood import PostgresNodeNeighborhoodStore
+from app.persistence.postgres.run_graph import PostgresRunGraphStore
+from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
+from app.workflows.ingest.groq_chunk_extraction import GroqChunkExtractionLLM
+from app.workflows.ingest.resolve_proposed_subgraph import (
     CanonicalGraphResolverStore,
     NodeCandidateSearchStore,
     NodeMatchKind,
 )
-from app.workflows.types import (
+from app.workflows.ingest.types import (
     IngestionRunRecord,
     MAX_LOAD_ALL_BYTES,
     NodeType,
     ProposedExternalId,
+)
+from app.workflows.ingest.workflow import (
+    IngestionExecutionError,
+    get_ingestion_run,
+    ingest_content,
 )
 
 

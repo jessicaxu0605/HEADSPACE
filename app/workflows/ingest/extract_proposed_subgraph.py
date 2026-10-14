@@ -8,8 +8,8 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from app.workflows.resolve_proposed_subgraph import merge_edge_details
-from app.workflows.types import (
+from app.workflows.ingest.resolve_proposed_subgraph import merge_edge_details
+from app.workflows.ingest.types import (
     BoundaryContext,
     ChunkExtractionInput,
     ChunkExtractionOutput,

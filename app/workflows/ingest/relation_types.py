@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.workflows.types import NodeType
+from app.workflows.ingest.types import NodeType
 
 
 @dataclass(frozen=True, slots=True)

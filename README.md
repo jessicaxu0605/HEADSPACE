@@ -8,6 +8,12 @@ app/                 Python application package
   db.py               Database engine and session setup
   models.py           Application-owned PostgreSQL models
   storage.py          Local or object-storage helpers
+  graph/
+    queries/           Graph read contracts and result models
+  persistence/
+    postgres/          PostgreSQL implementations of application stores
+  workflows/
+    ingest/             Ingestion orchestration, extraction, and resolution steps
   jobs/
     queue.py           Redis/RQ configuration and enqueue helpers
     tasks.py           Background job entrypoints

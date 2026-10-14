@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.db import get_async_connection
-from app.workflows.query_run_graph import RunGraph, RunGraphEdge, RunGraphNode
+from app.graph.queries.run_graph import RunGraph, RunGraphEdge, RunGraphNode
 
 
 class PostgresRunGraphStore:

@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 
 from app.main import app, get_extraction_llm, get_resolver_store
-from app.workflows.types import IngestionRunRecord
+from app.workflows.ingest.types import IngestionRunRecord
 
 
 class FakeLLM:

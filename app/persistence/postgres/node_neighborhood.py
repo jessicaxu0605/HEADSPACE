@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.db import get_async_connection
-from app.workflows.query_node_neighborhood import (
+from app.graph.queries.node_neighborhood import (
     NeighborhoodEdge,
     NeighborhoodNode,
     NodeNeighborhood,

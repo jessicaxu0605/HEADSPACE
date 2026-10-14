@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.db import get_async_connection
-from app.workflows.query_edge_detail import (
+from app.graph.queries.edge_detail import (
     EdgeDetail,
     EdgeEndpointNode,
     EdgeEvidence,
