@@ -26,6 +26,7 @@ type NeighborhoodGraphProps = {
   overlayRef?: RefObject<HTMLElement | null>;
   onExpandNode: (selection: MemoryNodeReference) => void;
   onOpenNode: (selection: MemoryNodeReference) => void;
+  onOpenEdge: (edgeId: string) => void;
 };
 
 type SimulationNode = NodeObject<GraphNode>;
@@ -50,6 +51,7 @@ export default function NeighborhoodGraph({
   overlayRef,
   onExpandNode,
   onOpenNode,
+  onOpenEdge,
 }: NeighborhoodGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const forceGraphRef = useRef<
@@ -125,7 +127,9 @@ export default function NeighborhoodGraph({
         source: edge.from_node_id,
         target: edge.to_node_id,
         edge_id: edge.edge_id,
-        label: `${fromTitle} ${edge.relation_type.replaceAll("_", " ")} ${toTitle}`,
+        label:
+          `${fromTitle} ${edge.relation_type.replaceAll("_", " ")} ${toTitle}` +
+          (edge.details ? ` — ${edge.details}` : ""),
         curvature,
       };
     });
@@ -306,6 +310,7 @@ export default function NeighborhoodGraph({
             linkWidth={(link) => (link.edge_id === hoveredEdgeId ? 2 : 1)}
             linkHoverPrecision={8}
             onLinkHover={(link) => setHoveredEdgeId(link?.edge_id ?? null)}
+            onLinkClick={(link) => onOpenEdge(link.edge_id)}
           />
         </div>
       )}

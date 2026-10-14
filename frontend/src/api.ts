@@ -1,4 +1,5 @@
 import type {
+  MemoryEdgeDetail,
   MemoryGraphNeighborhood,
   MemoryNodeReference,
   MemoryNodeType,
@@ -117,6 +118,22 @@ export const getNodeNeighborhood = async (
   );
 
   if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+    throw new Error("The API returned an unexpected response.");
+  }
+
+  return payload;
+};
+
+export const getEdgeDetail = async (
+  edgeId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<MemoryEdgeDetail> => {
+  const payload = await requestJson<MemoryEdgeDetail>(
+    `/api/v1/edges/${encodeURIComponent(edgeId)}`,
+    { signal: options.signal },
+  );
+
+  if (!payload || !payload.from_node || !Array.isArray(payload.evidence)) {
     throw new Error("The API returned an unexpected response.");
   }
 

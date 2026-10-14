@@ -15,6 +15,14 @@ type TextEntryInterfaceProps = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 };
 
+type SubmissionNotification = {
+  id: string;
+  content: string;
+  requestId: string;
+  state: "pending" | "success" | "error";
+  message?: string;
+};
+
 const textareaMaxHeight = 240;
 
 const starterPrompts = [
@@ -44,13 +52,15 @@ export default function TextEntryInterface({
   textareaRef,
 }: TextEntryInterfaceProps) {
   const [content, setContent] = useState("");
-  const [status, setStatus] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [notifications, setNotifications] = useState<
+    SubmissionNotification[]
+  >([]);
   const [showSubmit, setShowSubmit] = useState(false);
   const [scrollFades, setScrollFades] = useState({ up: false, down: false });
-  const retryRequestRef = useRef<{ content: string; id: string } | null>(null);
   const revealButtonTimeoutRef = useRef<number | undefined>(undefined);
   const autoScrollFrameRef = useRef<number | undefined>(undefined);
+  const notificationTimeoutsRef = useRef(new Map<string, number>());
+  const isMountedRef = useRef(true);
   const keepBottomFadeHiddenRef = useRef(false);
   const hasText = Boolean(content.trim());
 
@@ -141,63 +151,105 @@ export default function TextEntryInterface({
     }
   }, [hasText, showSubmit]);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
       window.clearTimeout(revealButtonTimeoutRef.current);
       if (autoScrollFrameRef.current !== undefined) {
         window.cancelAnimationFrame(autoScrollFrameRef.current);
       }
-    },
-    [],
-  );
+      notificationTimeoutsRef.current.forEach((timeout) =>
+        window.clearTimeout(timeout),
+      );
+    };
+  }, []);
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>): void => {
     const nextContent = event.target.value;
     const wasScrolledUp = scrollFades.down;
     setContent(nextContent);
-    setStatus("");
     if (!wasScrolledUp) {
       keepBottomFadeHiddenRef.current = true;
       window.requestAnimationFrame(scrollToBottomSoftly);
     }
-    if (
-      retryRequestRef.current &&
-      retryRequestRef.current.content !== nextContent
-    ) {
-      retryRequestRef.current = null;
-    }
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const dismissNotification = useCallback((id: string): void => {
+    const timeout = notificationTimeoutsRef.current.get(id);
+    if (timeout !== undefined) window.clearTimeout(timeout);
+    notificationTimeoutsRef.current.delete(id);
+    setNotifications((current) =>
+      current.filter((notification) => notification.id !== id),
+    );
+  }, []);
+
+  const submitInBackground = useCallback(
+    async (request: SubmissionNotification) => {
+      try {
+        await createManualIngestion(request.content, request.requestId);
+        if (!isMountedRef.current) return;
+        setNotifications((current) =>
+          current.map((notification) =>
+            notification.id === request.id
+              ? { ...notification, state: "success", message: undefined }
+              : notification,
+          ),
+        );
+        const timeout = window.setTimeout(
+          () => dismissNotification(request.id),
+          6000,
+        );
+        notificationTimeoutsRef.current.set(request.id, timeout);
+      } catch (error) {
+        if (!isMountedRef.current) return;
+        const message =
+          error instanceof Error ? error.message : "Something went wrong.";
+        setNotifications((current) =>
+          current.map((notification) =>
+            notification.id === request.id
+              ? { ...notification, state: "error", message }
+              : notification,
+          ),
+        );
+      }
+    },
+    [dismissNotification],
+  );
+
+  const retrySubmission = (notification: SubmissionNotification): void => {
+    setNotifications((current) =>
+      current.map((item) =>
+        item.id === notification.id
+          ? { ...item, state: "pending", message: undefined }
+          : item,
+      ),
+    );
+    void submitInBackground(notification);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (!content.trim()) {
       textareaRef.current?.focus();
       return;
     }
 
-    if (!retryRequestRef.current || retryRequestRef.current.content !== content) {
-      retryRequestRef.current = { content, id: newRequestId() };
-    }
-    const request = retryRequestRef.current;
-    setSubmitting(true);
-    setStatus("");
-
-    try {
-      await createManualIngestion(content, request.id);
-      setContent("");
-      setShowSubmit(false);
-      setScrollFades({ up: false, down: false });
-      retryRequestRef.current = null;
-      window.clearTimeout(revealButtonTimeoutRef.current);
-      revealButtonTimeoutRef.current = undefined;
-      window.requestAnimationFrame(() => textareaRef.current?.focus());
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Something went wrong.";
-      setStatus(`Couldn’t remember this thought. ${message} Please try again.`);
-    } finally {
-      setSubmitting(false);
-    }
+    const requestId = newRequestId();
+    const request: SubmissionNotification = {
+      id: requestId,
+      content,
+      requestId,
+      state: "pending",
+    };
+    setNotifications((current) => [...current, request]);
+    setContent("");
+    setShowSubmit(false);
+    setScrollFades({ up: false, down: false });
+    window.clearTimeout(revealButtonTimeoutRef.current);
+    revealButtonTimeoutRef.current = undefined;
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+    void submitInBackground(request);
   };
 
   const starterPrompt = useRef(
@@ -232,7 +284,6 @@ export default function TextEntryInterface({
             aria-label="Your thought"
             required
             value={content}
-            disabled={submitting}
             onChange={handleChange}
             onScroll={updateScrollFades}
             onTransitionEnd={updateScrollFades}
@@ -242,21 +293,48 @@ export default function TextEntryInterface({
         </div>
         <button
           id="submit-button"
-          className={`text-button${showSubmit ? " is-visible" : ""}${submitting ? " is-loading" : ""}`}
+          className={`text-button${showSubmit ? " is-visible" : ""}`}
           type="submit"
-          disabled={submitting}
           aria-hidden={!showSubmit}
-          aria-busy={submitting}
           tabIndex={showSubmit ? 0 : -1}
         >
           remember this&nbsp; →
         </button>
       </form>
-      {status && (
-        <p className="status" role="alert">
-          {status}
-        </p>
-      )}
+      <div className="notification-stack" aria-live="polite">
+        {notifications
+          .filter((notification) => notification.state !== "pending")
+          .map((notification) => (
+            <div
+              className={`notification ${notification.state}`}
+              key={notification.id}
+              role={notification.state === "error" ? "alert" : "status"}
+            >
+              <p>
+                {notification.state === "success"
+                  ? "your memory is ready"
+                  : notification.message}
+              </p>
+              <div className="notification-actions">
+                {notification.state === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => retrySubmission(notification)}
+                  >
+                    retry
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label="Dismiss notification"
+                  onClick={() => dismissNotification(notification.id)}
+                >
+                  dismiss
+                </button>
+              </div>
+            </div>
+          ))}
+      </div>
     </section>
   );
 }

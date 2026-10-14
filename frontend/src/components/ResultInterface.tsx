@@ -1,16 +1,20 @@
-import { useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { NodeNeighborhoodResponse, NodeQueryMatch } from "../api";
 import type { MemoryNodeReference } from "../memory_graph";
 import NeighborhoodGraph from "./NeighborhoodGraph";
+import RelationshipPage from "./RelationshipPage";
 
 type ResultInterfaceProps = {
   expandNotice: string;
+  expandNoticeIsError: boolean;
   graph: NodeNeighborhoodResponse | null;
   graphLoading: boolean;
   graphSelection: MemoryNodeReference | null;
   graphStatus: string;
+  graphStatusIsError: boolean;
   matches: NodeQueryMatch[];
   searchStatus: string;
+  searchStatusIsError: boolean;
   selectedButtonRef: RefObject<HTMLButtonElement | null>;
   selectedNodeIdRef: RefObject<string | null>;
   onBack: () => void;
@@ -20,12 +24,15 @@ type ResultInterfaceProps = {
 
 export default function ResultInterface({
   expandNotice,
+  expandNoticeIsError,
   graph,
   graphLoading,
   graphSelection,
   graphStatus,
+  graphStatusIsError,
   matches,
   searchStatus,
+  searchStatusIsError,
   selectedButtonRef,
   selectedNodeIdRef,
   onBack,
@@ -33,11 +40,28 @@ export default function ResultInterface({
   onOpenNode,
 }: ResultInterfaceProps) {
   const graphHeaderRef = useRef<HTMLElement | null>(null);
+  // The relationship page covers the graph rather than replacing it, so the
+  // graph keeps its layout and zoom for when the reader comes back.
+  const [openEdgeId, setOpenEdgeId] = useState<string | null>(null);
+  const graphNodeId = graphSelection?.node_id ?? null;
+
+  useEffect(() => {
+    setOpenEdgeId(null);
+  }, [graphNodeId]);
 
   if (!graphSelection) {
     return (
       <div className="search-feedback" aria-live="polite">
-        {searchStatus && <p className="search-status">{searchStatus}</p>}
+        {searchStatus && (
+          <p
+            className={`search-status${
+              searchStatusIsError ? " error-message" : ""
+            }`}
+            role={searchStatusIsError ? "alert" : undefined}
+          >
+            {searchStatus}
+          </p>
+        )}
         <ol className="search-results" aria-label="Search results">
           {matches.map((match) => {
             const aliases = match.identifiers.filter(
@@ -89,52 +113,76 @@ export default function ResultInterface({
       .length ?? 0;
 
   return (
-    <section
-      className={`graph-view${graphLoading ? " is-loading" : ""}`}
-      aria-live="polite"
-    >
-      <div className="graph-topbar">
-        <button className="graph-back" type="button" onClick={onBack}>
-          ← back to results
-        </button>
-      </div>
-      {graphStatus && (
-        <p className="graph-status" role="status">
-          {graphStatus}
-        </p>
-      )}
-      {graph && (
-        <div className="graph-body">
-          <header className="graph-header" ref={graphHeaderRef}>
-            <p className="graph-kicker">
-              {startNode?.node_type ?? graphSelection.node_type}
-            </p>
-            <h2 className="graph-title">
-              {startNode?.title ?? graphSelection.title}
-            </h2>
-            {startNode?.summary && (
-              <p className="graph-summary">{startNode.summary}</p>
-            )}
-          </header>
-
-          <section className="graph-section">
-            {connectedCount === 0 ? (
-              <p className="graph-empty">no connected nodes yet.</p>
-            ) : (
-              <NeighborhoodGraph
-                graph={graph}
-                overlayRef={graphHeaderRef}
-                onExpandNode={onExpandNode}
-                onOpenNode={onOpenNode}
-              />
-            )}
-            <p className="graph-depth">
-              {expandNotice ||
-                `within ${graph.depth} ${graph.depth === 1 ? "degree" : "degrees"}`}
-            </p>
-          </section>
+    <>
+      <section
+        className={`graph-view${graphLoading ? " is-loading" : ""}`}
+        aria-live="polite"
+        inert={openEdgeId !== null}
+      >
+        <div className="graph-topbar">
+          <button className="graph-back" type="button" onClick={onBack}>
+            ← back to results
+          </button>
         </div>
+        {graphStatus && (
+          <p
+            className={`graph-status${
+              graphStatusIsError ? " error-message" : ""
+            }`}
+            role={graphStatusIsError ? "alert" : "status"}
+          >
+            {graphStatus}
+          </p>
+        )}
+        {graph && (
+          <div className="graph-body">
+            <header className="graph-header" ref={graphHeaderRef}>
+              <p className="graph-kicker">
+                {startNode?.node_type ?? graphSelection.node_type}
+              </p>
+              <h2 className="graph-title">
+                {startNode?.title ?? graphSelection.title}
+              </h2>
+              {startNode?.summary && (
+                <p className="graph-summary">{startNode.summary}</p>
+              )}
+            </header>
+
+            <section className="graph-section">
+              {connectedCount === 0 ? (
+                <p className="graph-empty">no connected nodes yet.</p>
+              ) : (
+                <NeighborhoodGraph
+                  graph={graph}
+                  overlayRef={graphHeaderRef}
+                  onExpandNode={onExpandNode}
+                  onOpenNode={onOpenNode}
+                  onOpenEdge={setOpenEdgeId}
+                />
+              )}
+              <p
+                className={`graph-depth${
+                  expandNoticeIsError ? " error-message" : ""
+                }`}
+                role={expandNoticeIsError ? "alert" : undefined}
+              >
+                {expandNotice ||
+                  `within ${graph.depth} ${graph.depth === 1 ? "degree" : "degrees"}`}
+              </p>
+            </section>
+          </div>
+        )}
+      </section>
+      {openEdgeId && (
+        <RelationshipPage
+          edgeId={openEdgeId}
+          onBack={() => setOpenEdgeId(null)}
+          onOpenNode={(selection) => {
+            setOpenEdgeId(null);
+            onOpenNode(selection);
+          }}
+        />
       )}
-    </section>
+    </>
   );
 }
