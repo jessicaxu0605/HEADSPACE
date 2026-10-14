@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS memory_edge (
   from_node_id uuid NOT NULL,
   to_node_id uuid NOT NULL,
   relation_type_id uuid NOT NULL REFERENCES relation_type(id) ON DELETE RESTRICT,
+  details text CHECK (details IS NULL OR btrim(details) <> ''),
   strength double precision NOT NULL DEFAULT 0.5 CHECK (strength BETWEEN 0 AND 1),
   confidence double precision NOT NULL DEFAULT 0.5 CHECK (confidence BETWEEN 0 AND 1),
   valid_from timestamptz,

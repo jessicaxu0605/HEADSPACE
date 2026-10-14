@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any
 from uuid import UUID
@@ -22,9 +24,12 @@ from app.workflows.resolve_proposed_subgraph import (
     CreateCanonicalNode,
     CreateNodeExternalId,
     CreateNodeIdentifier,
+    MergeCanonicalNodes,
     ResolutionTransactionPlan,
+    UpdateCanonicalNodeTitle,
     UpsertCanonicalEdge,
     combine_probabilities,
+    merge_edge_details,
     resolve_proposed_subgraph,
 )
 from app.workflows.types import (
@@ -34,6 +39,9 @@ from app.workflows.types import (
     ProposedSubgraphExtractionResult,
     SourceType,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionExecutionError(RuntimeError):
@@ -247,10 +255,12 @@ async def ingest_content(
 
     _set_source_preparation_status(source, "processing")
     run = _update_ingestion_run(run.id, status="processing")
+    failure_phase = "extraction"
     try:
         extraction_result: ProposedSubgraphExtractionResult = (
             await extract_proposed_subgraph(prepare_source(source), llm)
         )
+        failure_phase = "resolve"
         transaction_plan = await resolve_proposed_subgraph(
             workspace_id=workspace_id,
             source_id=source.id,
@@ -268,6 +278,13 @@ async def ingest_content(
         }
         _set_source_preparation_status(source, "failed")
         failed_run = _update_ingestion_run(run.id, status="failed", error=error)
+        _persist_ingestion_failure(
+            run_id=run.id,
+            workspace_id=workspace_id,
+            source_id=source.id,
+            phase=failure_phase,
+            error=error,
+        )
         raise IngestionExecutionError(failed_run, exc) from exc
 
     result = to_jsonable(extraction_result)
@@ -285,6 +302,15 @@ async def ingest_content(
         }
         _set_source_preparation_status(source, "failed")
         failed_run = _update_ingestion_run(run.id, status="failed", error=error)
+        _persist_ingestion_failure(
+            run_id=run.id,
+            workspace_id=workspace_id,
+            source_id=source.id,
+            phase="apply",
+            error=error,
+            plan=transaction_plan,
+            result=result,
+        )
         raise IngestionExecutionError(failed_run, exc) from exc
 
 
@@ -300,6 +326,57 @@ def _postgres_resolver_store() -> CanonicalGraphResolverStore:
     )
 
     return PostgresCanonicalGraphResolverStore()
+
+
+@dataclass
+class _RunGraphChanges:
+    """Nodes and edges whose change kind is more specific than 'updated'."""
+
+    created_nodes: set[UUID] = field(default_factory=set)
+    merged_nodes: set[UUID] = field(default_factory=set)
+    created_edges: set[UUID] = field(default_factory=set)
+    archived_edges: set[UUID] = field(default_factory=set)
+
+
+def _record_run_graph_changes(
+    conn: Any,
+    *,
+    run_id: UUID,
+    workspace_id: UUID,
+    affected_nodes: set[UUID],
+    affected_edges: set[UUID],
+    changes: _RunGraphChanges,
+) -> None:
+    rows: list[tuple[str, UUID, str]] = []
+    for node_id in affected_nodes:
+        if node_id in changes.merged_nodes:
+            kind = "merged"
+        elif node_id in changes.created_nodes:
+            kind = "created"
+        else:
+            kind = "updated"
+        rows.append(("node", node_id, kind))
+    for edge_id in affected_edges:
+        # An edge created and then superseded in one run reads as archived.
+        if edge_id in changes.archived_edges:
+            kind = "archived"
+        elif edge_id in changes.created_edges:
+            kind = "created"
+        else:
+            kind = "updated"
+        rows.append(("edge", edge_id, kind))
+    for object_type, object_id, change_kind in rows:
+        conn.execute(
+            """
+            INSERT INTO ingestion_run_graph_change (
+                workspace_id, run_id, object_type, object_id, change_kind
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (run_id, object_type, object_id)
+            DO UPDATE SET change_kind = EXCLUDED.change_kind
+            """,
+            (workspace_id, run_id, object_type, object_id, change_kind),
+        )
 
 
 def _map_node_id(node_id: UUID, node_ids: dict[UUID, UUID]) -> UUID:
@@ -349,9 +426,11 @@ def _enqueue_projection_rebuild(
 def _apply_node_actions(
     conn: Any,
     plan: ResolutionTransactionPlan,
-) -> tuple[dict[UUID, UUID], set[UUID]]:
+    changes: _RunGraphChanges,
+) -> tuple[dict[UUID, UUID], set[UUID], set[UUID]]:
     node_ids: dict[UUID, UUID] = {}
     affected_node_ids: set[UUID] = set()
+    affected_edge_ids: set[UUID] = set()
 
     for action in plan.node_actions:
         if not isinstance(action, CreateCanonicalNode):
@@ -395,7 +474,9 @@ def _apply_node_actions(
                 "idempotency_key": action.idempotency_key,
             },
         ).fetchone()
-        if row is None:
+        if row is not None:
+            changes.created_nodes.add(row["id"])
+        else:
             row = conn.execute(
                 """
                 SELECT id, node_type
@@ -415,7 +496,26 @@ def _apply_node_actions(
         affected_node_ids.add(row["id"])
 
     for action in plan.node_actions:
-        if isinstance(action, CreateCanonicalNode):
+        if not isinstance(action, MergeCanonicalNodes):
+            continue
+        from_node_id = _map_node_id(action.from_node_id, node_ids)
+        into_node_id = _map_node_id(action.into_node_id, node_ids)
+        affected_edge_ids.update(
+            _merge_canonical_nodes(
+                conn,
+                workspace_id=plan.workspace_id,
+                from_node_id=from_node_id,
+                into_node_id=into_node_id,
+                reason=action.reason,
+                changes=changes,
+            )
+        )
+        node_ids[from_node_id] = into_node_id
+        changes.merged_nodes.add(from_node_id)
+        affected_node_ids.update((from_node_id, into_node_id))
+
+    for action in plan.node_actions:
+        if isinstance(action, (CreateCanonicalNode, MergeCanonicalNodes)):
             continue
         node_id = _map_node_id(action.node_id, node_ids)
         _assert_active_node(
@@ -423,7 +523,16 @@ def _apply_node_actions(
             workspace_id=plan.workspace_id,
             node_id=node_id,
         )
-        if isinstance(action, CreateNodeIdentifier):
+        if isinstance(action, UpdateCanonicalNodeTitle):
+            conn.execute(
+                """
+                UPDATE memory_node
+                SET name = %s, updated_at = now()
+                WHERE workspace_id = %s AND id = %s
+                """,
+                (action.title, plan.workspace_id, node_id),
+            )
+        elif isinstance(action, CreateNodeIdentifier):
             conn.execute(
                 """
                 INSERT INTO node_identifier (
@@ -471,19 +580,255 @@ def _apply_node_actions(
             raise TypeError(f"Unsupported node action: {type(action).__name__}")
         affected_node_ids.add(node_id)
 
-    return node_ids, affected_node_ids
+    return node_ids, affected_node_ids, affected_edge_ids
 
 
-def _ensure_relation_type(conn: Any, relation_name: str) -> dict[str, Any]:
-    return conn.execute(
+def _merge_canonical_nodes(
+    conn: Any,
+    *,
+    workspace_id: UUID,
+    from_node_id: UUID,
+    into_node_id: UUID,
+    reason: str,
+    changes: _RunGraphChanges,
+) -> set[UUID]:
+    """Move durable identity and graph records, then retire the duplicate node."""
+
+    # The reason remains in the persisted ingestion transaction plan; the canonical
+    # node schema itself records only the redirect.
+    del reason
+    if from_node_id == into_node_id:
+        return set()
+    affected_edge_ids: set[UUID] = set()
+    rows = conn.execute(
         """
-        INSERT INTO relation_type (name, inverse_name)
-        VALUES (%s, %s)
-        ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-        RETURNING id, name, is_exclusive, can_change_over_time
+        SELECT id, node_type
+        FROM memory_node
+        WHERE workspace_id = %s
+          AND id IN (%s, %s)
+          AND deleted_at IS NULL
+          AND merged_into_node_id IS NULL
+        FOR UPDATE
         """,
-        (relation_name, relation_name),
+        (workspace_id, from_node_id, into_node_id),
+    ).fetchall()
+    node_types = {row["id"]: row["node_type"] for row in rows}
+    if set(node_types) != {from_node_id, into_node_id}:
+        raise StaleTransactionPlanError(
+            "A node selected for merging is no longer active."
+        )
+    if node_types[from_node_id] != node_types[into_node_id]:
+        raise StaleTransactionPlanError(
+            "Canonical nodes of different types cannot be merged."
+        )
+
+    conn.execute(
+        """
+        UPDATE node_identifier AS source
+        SET deleted_at = now(), deleted_reason = 'merged_duplicate'
+        WHERE source.workspace_id = %s
+          AND source.node_id = %s
+          AND source.deleted_at IS NULL
+          AND EXISTS (
+              SELECT 1 FROM node_identifier AS target
+              WHERE target.workspace_id = source.workspace_id
+                AND target.node_id = %s
+                AND target.scope = source.scope
+                AND lower(target.identifier_text) = lower(source.identifier_text)
+                AND target.deleted_at IS NULL
+          )
+        """,
+        (workspace_id, from_node_id, into_node_id),
+    )
+    conn.execute(
+        """
+        UPDATE node_identifier
+        SET node_id = %s, updated_at = now()
+        WHERE workspace_id = %s AND node_id = %s AND deleted_at IS NULL
+        """,
+        (into_node_id, workspace_id, from_node_id),
+    )
+    conn.execute(
+        """
+        UPDATE node_external_id
+        SET node_id = %s
+        WHERE workspace_id = %s AND node_id = %s AND deleted_at IS NULL
+        """,
+        (into_node_id, workspace_id, from_node_id),
+    )
+    conn.execute(
+        """
+        DELETE FROM memory_evidence_annotation AS source
+        USING memory_evidence_annotation AS target
+        WHERE source.workspace_id = %s
+          AND source.node_id = %s
+          AND target.workspace_id = source.workspace_id
+          AND target.evidence_id = source.evidence_id
+          AND target."start" = source."start"
+          AND target.length = source.length
+          AND target.node_id = %s
+        """,
+        (workspace_id, from_node_id, into_node_id),
+    )
+    conn.execute(
+        """
+        UPDATE memory_evidence_annotation
+        SET node_id = %s
+        WHERE workspace_id = %s AND node_id = %s
+        """,
+        (into_node_id, workspace_id, from_node_id),
+    )
+
+    edges = conn.execute(
+        """
+        SELECT
+            edge.id,
+            edge.from_node_id,
+            edge.to_node_id,
+            edge.relation_type_id,
+            edge.confidence,
+            edge.strength,
+            edge.details,
+            relation.is_symmetric
+        FROM memory_edge AS edge
+        JOIN relation_type AS relation ON relation.id = edge.relation_type_id
+        WHERE edge.workspace_id = %s
+          AND edge.deleted_at IS NULL
+          AND (edge.from_node_id = %s OR edge.to_node_id = %s)
+        FOR UPDATE
+        """,
+        (workspace_id, from_node_id, from_node_id),
+    ).fetchall()
+    for edge in edges:
+        affected_edge_ids.add(edge["id"])
+        new_from = (
+            into_node_id
+            if edge["from_node_id"] == from_node_id
+            else edge["from_node_id"]
+        )
+        new_to = (
+            into_node_id
+            if edge["to_node_id"] == from_node_id
+            else edge["to_node_id"]
+        )
+        if edge["is_symmetric"] and str(new_from) > str(new_to):
+            new_from, new_to = new_to, new_from
+        if new_from == new_to:
+            conn.execute(
+                """
+                UPDATE memory_edge
+                SET deleted_at = now(), deleted_reason = 'merged_self_edge'
+                WHERE workspace_id = %s AND id = %s
+                """,
+                (workspace_id, edge["id"]),
+            )
+            changes.archived_edges.add(edge["id"])
+            continue
+        existing = conn.execute(
+            """
+            SELECT id, confidence, strength, details
+            FROM memory_edge
+            WHERE workspace_id = %s
+              AND from_node_id = %s
+              AND to_node_id = %s
+              AND relation_type_id = %s
+              AND deleted_at IS NULL
+              AND id <> %s
+            FOR UPDATE
+            """,
+            (workspace_id, new_from, new_to, edge["relation_type_id"], edge["id"]),
+        ).fetchone()
+        if existing is None:
+            conn.execute(
+                """
+                UPDATE memory_edge
+                SET from_node_id = %s, to_node_id = %s, updated_at = now()
+                WHERE workspace_id = %s AND id = %s
+                """,
+                (new_from, new_to, workspace_id, edge["id"]),
+            )
+            continue
+        affected_edge_ids.add(existing["id"])
+        conn.execute(
+            """
+            DELETE FROM memory_evidence AS source
+            USING memory_evidence AS target
+            WHERE source.workspace_id = %s
+              AND source.edge_id = %s
+              AND target.workspace_id = source.workspace_id
+              AND target.edge_id = %s
+              AND target.source_id = source.source_id
+              AND target.raw_content = source.raw_content
+            """,
+            (workspace_id, edge["id"], existing["id"]),
+        )
+        conn.execute(
+            """
+            UPDATE memory_evidence
+            SET edge_id = %s
+            WHERE workspace_id = %s AND edge_id = %s
+            """,
+            (existing["id"], workspace_id, edge["id"]),
+        )
+        conn.execute(
+            """
+            UPDATE memory_edge
+            SET confidence = 1 - ((1 - confidence) * (1 - %s)),
+                strength = 1 - ((1 - strength) * (1 - %s)),
+                details = %s,
+                updated_at = now()
+            WHERE workspace_id = %s AND id = %s
+            """,
+            (
+                edge["confidence"],
+                edge["strength"],
+                merge_edge_details(existing["details"], edge["details"]),
+                workspace_id,
+                existing["id"],
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE memory_edge
+            SET deleted_at = now(), deleted_reason = 'merged_duplicate_edge'
+            WHERE workspace_id = %s AND id = %s
+            """,
+            (workspace_id, edge["id"]),
+        )
+        changes.archived_edges.add(edge["id"])
+
+    conn.execute(
+        """
+        UPDATE memory_node
+        SET merged_into_node_id = %s,
+            updated_at = now()
+        WHERE workspace_id = %s AND id = %s
+        """,
+        (into_node_id, workspace_id, from_node_id),
+    )
+    return affected_edge_ids
+
+
+def _get_relation_type(
+    conn: Any,
+    relation_name: str,
+    *,
+    allow_inactive: bool = False,
+) -> dict[str, Any]:
+    row = conn.execute(
+        """
+        SELECT id, name, is_exclusive, can_change_over_time
+        FROM relation_type
+        WHERE name = %s
+          AND (%s OR is_active)
+        """,
+        (relation_name, allow_inactive),
     ).fetchone()
+    if row is None:
+        raise StaleTransactionPlanError(
+            f"Relation type {relation_name!r} is not active in the database catalog."
+        )
+    return row
 
 
 def _insert_evidence(
@@ -510,9 +855,10 @@ def _insert_evidence(
                 source_id,
                 raw_content,
                 confidence,
-                strength_boost
+                strength_boost,
+                is_verbatim
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (workspace_id, edge_id, source_id, raw_content)
             DO NOTHING
             RETURNING id
@@ -524,6 +870,7 @@ def _insert_evidence(
                 evidence.raw_content,
                 evidence.confidence,
                 evidence.strength_boost or 0.0,
+                evidence.is_verbatim,
             ),
         ).fetchone()
         inserted = row is not None
@@ -573,6 +920,7 @@ def _apply_edge_actions(
     conn: Any,
     plan: ResolutionTransactionPlan,
     node_ids: dict[UUID, UUID],
+    changes: _RunGraphChanges,
 ) -> tuple[set[UUID], set[UUID]]:
     affected_node_ids: set[UUID] = set()
     affected_edge_ids: set[UUID] = set()
@@ -591,6 +939,7 @@ def _apply_edge_actions(
         ).fetchone()
         if row is not None:
             affected_edge_ids.add(row["id"])
+            changes.archived_edges.add(row["id"])
             affected_node_ids.update((row["from_node_id"], row["to_node_id"]))
 
     for action in plan.edge_actions:
@@ -608,11 +957,11 @@ def _apply_edge_actions(
             workspace_id=plan.workspace_id,
             node_id=to_node_id,
         )
-        relation = _ensure_relation_type(conn, action.relation_type)
+        relation = _get_relation_type(conn, action.relation_type)
 
         edge = conn.execute(
             """
-            SELECT e.id, e.confidence, e.strength
+            SELECT e.id, e.confidence, e.strength, e.details
             FROM memory_edge AS e
             WHERE e.workspace_id = %s
               AND e.from_node_id = %s
@@ -624,35 +973,50 @@ def _apply_edge_actions(
             (plan.workspace_id, from_node_id, to_node_id, relation["id"]),
         ).fetchone()
 
-        if edge is None and action.operation == "upgrade_unknown":
-            unknown_relation = _ensure_relation_type(conn, "unknown_type")
+        if edge is None and action.operation == "specialize":
+            if action.previous_relation_type is None:
+                raise ValueError("A specialize action needs previous_relation_type.")
+            previous_relation = _get_relation_type(
+                conn,
+                action.previous_relation_type,
+                allow_inactive=True,
+            )
+            # Rewrite the broader edge in place so its evidence, details, and
+            # history carry over to the more specific relation.
             edge = conn.execute(
                 """
-                SELECT e.id, e.confidence, e.strength
+                SELECT e.id, e.confidence, e.strength, e.details
                 FROM memory_edge AS e
                 WHERE e.workspace_id = %s
-                  AND e.from_node_id = %s
-                  AND e.to_node_id = %s
+                  AND e.id = %s
                   AND e.relation_type_id = %s
                   AND e.deleted_at IS NULL
                 FOR UPDATE
                 """,
+                (plan.workspace_id, action.edge_id, previous_relation["id"]),
+            ).fetchone()
+            if edge is None:
+                raise StaleTransactionPlanError(
+                    f"Edge {action.edge_id} selected for specialization "
+                    "changed after planning."
+                )
+            conn.execute(
+                """
+                UPDATE memory_edge
+                SET relation_type_id = %s,
+                    from_node_id = %s,
+                    to_node_id = %s,
+                    updated_at = now()
+                WHERE workspace_id = %s AND id = %s
+                """,
                 (
-                    plan.workspace_id,
+                    relation["id"],
                     from_node_id,
                     to_node_id,
-                    unknown_relation["id"],
+                    plan.workspace_id,
+                    edge["id"],
                 ),
-            ).fetchone()
-            if edge is not None:
-                conn.execute(
-                    """
-                    UPDATE memory_edge
-                    SET relation_type_id = %s, updated_at = now()
-                    WHERE workspace_id = %s AND id = %s
-                    """,
-                    (relation["id"], plan.workspace_id, edge["id"]),
-                )
+            )
 
         incoming_confidence = combine_probabilities(
             [item.confidence for item in action.evidence]
@@ -691,6 +1055,7 @@ def _apply_edge_actions(
                     (plan.workspace_id, conflict["id"]),
                 )
                 affected_edge_ids.add(conflict["id"])
+                changes.archived_edges.add(conflict["id"])
                 affected_node_ids.update(
                     (conflict["from_node_id"], conflict["to_node_id"])
                 )
@@ -708,7 +1073,7 @@ def _apply_edge_actions(
                     strength
                 )
                 VALUES (%s, %s, %s, %s, %s, 0, 0)
-                RETURNING id, confidence, strength
+                RETURNING id, confidence, strength, details
                 """,
                 (
                     plan.workspace_id,
@@ -718,6 +1083,7 @@ def _apply_edge_actions(
                     relation["id"],
                 ),
             ).fetchone()
+            changes.created_edges.add(edge["id"])
 
         confidence_values, strength_values = _insert_evidence(
             conn,
@@ -730,18 +1096,204 @@ def _apply_edge_actions(
             [edge["confidence"], *confidence_values]
         )
         new_strength = combine_probabilities([edge["strength"], *strength_values])
+        new_details = merge_edge_details(edge["details"], action.details)
         conn.execute(
             """
             UPDATE memory_edge
-            SET confidence = %s, strength = %s, updated_at = now()
+            SET confidence = %s, strength = %s, details = %s, updated_at = now()
             WHERE workspace_id = %s AND id = %s
             """,
-            (new_confidence, new_strength, plan.workspace_id, edge["id"]),
+            (
+                new_confidence,
+                new_strength,
+                new_details,
+                plan.workspace_id,
+                edge["id"],
+            ),
         )
         affected_edge_ids.add(edge["id"])
         affected_node_ids.update((from_node_id, to_node_id))
 
     return affected_node_ids, affected_edge_ids
+
+
+def _persist_review_items(
+    conn: Any,
+    *,
+    run_id: UUID,
+    plan: ResolutionTransactionPlan,
+    result: dict[str, Any],
+) -> None:
+    extraction_items = result.get("repair_items", [])
+    review_items: list[dict[str, Any]] = []
+    resolved_relation_review_edge_ids = {
+        item.proposed_edge_id
+        for item in plan.repair_items
+        if item.item_type
+        in {"unsupported_relation_type", "invalid_relation_endpoints"}
+        and item.proposed_edge_id is not None
+    }
+    for index, item in enumerate(extraction_items):
+        if not isinstance(item, dict):
+            continue
+        details = item.get("details")
+        proposed_edge_id = (
+            details.get("proposed_edge_id")
+            if isinstance(details, dict)
+            else None
+        )
+        if (
+            item.get("item_type") == "unclear_relation"
+            and proposed_edge_id in resolved_relation_review_edge_ids
+        ):
+            continue
+        severity = (
+            details.get("severity", "medium")
+            if isinstance(details, dict)
+            else "medium"
+        )
+        if severity not in {"low", "medium", "high"}:
+            severity = "medium"
+        review_items.append(
+            {
+                "review_key": f"{plan.source_id}:extraction:{index}",
+                "phase": "extraction",
+                "item_type": item.get("item_type") or "semantic_uncertainty",
+                "severity": severity,
+                "message": item.get("message") or "Extraction requires review.",
+                "proposed_node_id": None,
+                "proposed_edge_id": proposed_edge_id,
+                "payload": item,
+            }
+        )
+
+    for index, item in enumerate(plan.repair_items):
+        review_items.append(
+            {
+                "review_key": f"{plan.source_id}:resolve:{index}",
+                "phase": "resolve",
+                "item_type": item.item_type,
+                "severity": item.severity,
+                "message": item.message,
+                "proposed_node_id": item.proposed_node_id,
+                "proposed_edge_id": item.proposed_edge_id,
+                "payload": to_jsonable(item),
+            }
+        )
+
+    for item in review_items:
+        conn.execute(
+            """
+            INSERT INTO graph_review_item (
+                workspace_id,
+                ingestion_run_id,
+                source_id,
+                review_key,
+                phase,
+                item_type,
+                severity,
+                message,
+                proposed_node_id,
+                proposed_edge_id,
+                payload_json
+            )
+            VALUES (
+                %(workspace_id)s,
+                %(run_id)s,
+                %(source_id)s,
+                %(review_key)s,
+                %(phase)s,
+                %(item_type)s,
+                %(severity)s,
+                %(message)s,
+                %(proposed_node_id)s,
+                %(proposed_edge_id)s,
+                %(payload)s
+            )
+            ON CONFLICT (workspace_id, review_key) DO NOTHING
+            """,
+            {
+                "workspace_id": plan.workspace_id,
+                "run_id": run_id,
+                "source_id": plan.source_id,
+                **item,
+                "payload": Jsonb(item["payload"]),
+            },
+        )
+
+
+def _persist_ingestion_failure(
+    *,
+    run_id: UUID,
+    workspace_id: UUID,
+    source_id: UUID,
+    phase: str,
+    error: dict[str, Any],
+    plan: ResolutionTransactionPlan | None = None,
+    result: dict[str, Any] | None = None,
+) -> None:
+    """Persist review context after the graph transaction has rolled back."""
+
+    try:
+        with get_connection() as conn:
+            with conn.transaction():
+                if plan is not None and result is not None:
+                    _persist_review_items(
+                        conn,
+                        run_id=run_id,
+                        plan=plan,
+                        result=result,
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO graph_review_item (
+                        workspace_id,
+                        ingestion_run_id,
+                        source_id,
+                        review_key,
+                        phase,
+                        item_type,
+                        severity,
+                        message,
+                        payload_json
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (workspace_id, review_key) DO UPDATE SET
+                        ingestion_run_id = EXCLUDED.ingestion_run_id,
+                        phase = EXCLUDED.phase,
+                        severity = EXCLUDED.severity,
+                        status = 'pending',
+                        message = EXCLUDED.message,
+                        payload_json = EXCLUDED.payload_json,
+                        resolved_at = NULL,
+                        updated_at = now()
+                    """,
+                    (
+                        workspace_id,
+                        run_id,
+                        source_id,
+                        f"{source_id}:{phase}:ingestion-failure",
+                        phase,
+                        "ingestion_failure",
+                        "high",
+                        error.get("message") or "Ingestion failed and requires review.",
+                        Jsonb(
+                            {
+                                "error": error,
+                                "transaction_plan": (
+                                    to_jsonable(plan) if plan is not None else None
+                                ),
+                            }
+                        ),
+                    ),
+                )
+    except Exception:
+        # Preserve the original ingestion exception even if the review store is
+        # unavailable; ingestion_run.error_json remains the fallback record.
+        logger.exception(
+            "Could not persist review item for failed ingestion run %s",
+            run_id,
+        )
 
 
 def apply_transaction_plan(
@@ -786,9 +1338,29 @@ def apply_transaction_plan(
                     f"Ingestion run {run_id} is {run['status']!r}, not 'processing'."
                 )
 
-            node_ids, affected_nodes = _apply_node_actions(conn, plan)
-            edge_nodes, affected_edges = _apply_edge_actions(conn, plan, node_ids)
+            changes = _RunGraphChanges()
+            node_ids, affected_nodes, merge_edges = _apply_node_actions(
+                conn, plan, changes
+            )
+            edge_nodes, affected_edges = _apply_edge_actions(
+                conn, plan, node_ids, changes
+            )
             affected_nodes.update(edge_nodes)
+            affected_edges.update(merge_edges)
+            _record_run_graph_changes(
+                conn,
+                run_id=run_id,
+                workspace_id=plan.workspace_id,
+                affected_nodes=affected_nodes,
+                affected_edges=affected_edges,
+                changes=changes,
+            )
+            _persist_review_items(
+                conn,
+                run_id=run_id,
+                plan=plan,
+                result=result,
+            )
 
             for node_id in affected_nodes:
                 _enqueue_projection_rebuild(

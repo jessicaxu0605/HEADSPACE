@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
@@ -13,13 +12,11 @@ from app.workflows.resolve_proposed_subgraph import CanonicalNode, NodeCandidate
 class FakeResolverStore:
     def __init__(self, candidates: list[NodeCandidate]) -> None:
         self.candidates = candidates
-        self.workspace_id = None
-        self.proposed_node = None
+        self.calls = []
 
-    async def find_node_candidates(self, *, workspace_id, proposed_node):
-        self.workspace_id = workspace_id
-        self.proposed_node = proposed_node
-        return self.candidates
+    async def search_node_candidates(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.candidates[: kwargs["limit"]]
 
 
 class NodeQueryApiTests(unittest.TestCase):
@@ -45,22 +42,18 @@ class NodeQueryApiTests(unittest.TestCase):
         )
         app.dependency_overrides[get_resolver_store] = lambda: store
 
-        with patch(
-            "app.main.ensure_temporary_prototype_workspace",
-            return_value=expected_workspace_id,
-        ):
-            response = TestClient(app).post(
-                "/api/v1/nodes/query",
-                json={
-                    "query": "Sara Chen",
-                    "node_type": "person",
-                    "aliases": ["Sarah", "Sarah"],
-                    "external_ids": [
-                        {"provider": " slack ", "external_id": " U123 "}
-                    ],
-                    "limit": 2,
-                },
-            )
+        response = TestClient(app).post(
+            "/api/v1/nodes/query",
+            json={
+                "query": "Sara Chen",
+                "node_type": "person",
+                "aliases": ["Sarah", "Sarah"],
+                "external_ids": [
+                    {"provider": " slack ", "external_id": " U123 "}
+                ],
+                "limit": 2,
+            },
+        )
 
         self.assertEqual(response.status_code, 200)
         body = response.json()
@@ -69,10 +62,32 @@ class NodeQueryApiTests(unittest.TestCase):
         self.assertEqual(body["matches"][0]["node_id"], str(sarah.node_id))
         self.assertEqual(body["matches"][0]["match_kind"], "identifier")
         self.assertEqual(body["matches"][0]["identifiers"], ["Sarah"])
-        self.assertEqual(store.workspace_id, expected_workspace_id)
-        self.assertEqual(store.proposed_node.names, ["Sara Chen", "Sarah"])
-        self.assertEqual(store.proposed_node.external_ids[0].provider, "slack")
-        self.assertEqual(store.proposed_node.external_ids[0].external_id, "U123")
+        call = store.calls[0]
+        self.assertEqual(call["workspace_id"], expected_workspace_id)
+        self.assertEqual(call["query"], "Sara Chen")
+        self.assertEqual(call["node_type"], "person")
+        self.assertEqual(call["aliases"], ["Sarah"])
+        self.assertEqual(call["external_ids"][0].provider, "slack")
+        self.assertEqual(call["external_ids"][0].external_id, "U123")
+        self.assertEqual(call["limit"], 2)
+
+    def test_searches_without_a_type_filter_when_type_is_omitted(self) -> None:
+        person = CanonicalNode(uuid4(), "person", "Jordan")
+        store = FakeResolverStore(
+            [NodeCandidate(person, "normalized_title", 0.98, ["exact title"])]
+        )
+        app.dependency_overrides[get_resolver_store] = lambda: store
+
+        response = TestClient(app).post(
+            "/api/v1/nodes/query",
+            json={"query": "Jordan", "limit": 5},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["node_type"])
+        self.assertEqual(len(response.json()["matches"]), 1)
+        self.assertEqual(len(store.calls), 1)
+        self.assertIsNone(store.calls[0]["node_type"])
 
     def test_rejects_invalid_query_inputs(self) -> None:
         app.dependency_overrides[get_resolver_store] = lambda: FakeResolverStore([])

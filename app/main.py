@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import asdict
+from datetime import datetime
 from functools import lru_cache
 from typing import Any, Literal, cast
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.db import ensure_temporary_prototype_workspace
+from app.db import (
+    DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+    close_async_pool,
+    open_async_pool,
+)
 from app.workflows.extract_proposed_subgraph import ChunkExtractionLLM
 from app.workflows.groq_chunk_extraction import GroqChunkExtractionLLM
 from app.workflows.ingest import (
@@ -21,9 +29,23 @@ from app.workflows.ingest import (
     get_ingestion_run,
     ingest_content,
 )
-from app.workflows.postgres_canonical_graph import PostgresCanonicalGraphResolverStore
+from app.workflows.postgres_canonical_graph import (
+    PostgresCanonicalGraphResolverStore,
+    load_active_relation_types,
+)
+from app.workflows.postgres_edge_detail import PostgresEdgeDetailStore
+from app.workflows.postgres_node_neighborhood import PostgresNodeNeighborhoodStore
+from app.workflows.postgres_run_graph import PostgresRunGraphStore
+from app.workflows.query_edge_detail import EdgeDetailStore, EdgeStatus
+from app.workflows.query_node_neighborhood import NodeNeighborhoodStore
+from app.workflows.query_run_graph import (
+    RunGraphChangeKind,
+    RunGraphStore,
+    RunNodeStatus,
+)
 from app.workflows.resolve_proposed_subgraph import (
     CanonicalGraphResolverStore,
+    NodeCandidateSearchStore,
     NodeMatchKind,
 )
 from app.workflows.types import (
@@ -31,13 +53,10 @@ from app.workflows.types import (
     MAX_LOAD_ALL_BYTES,
     NodeType,
     ProposedExternalId,
-    ProposedNode,
 )
 
 
 SupportedApiSourceType = Literal["manual_entry", "email", "calendar_event"]
-
-
 class IngestionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -109,7 +128,7 @@ class NodeQueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=1, max_length=500)
-    node_type: NodeType
+    node_type: NodeType | None = None
     aliases: list[str] = Field(default_factory=list, max_length=20)
     external_ids: list[NodeExternalIdRequest] = Field(
         default_factory=list,
@@ -152,20 +171,159 @@ class NodeQueryMatchResponse(BaseModel):
 
 class NodeQueryResponse(BaseModel):
     query: str
-    node_type: NodeType
+    node_type: NodeType | None
     matches: list[NodeQueryMatchResponse]
 
 
-@lru_cache(maxsize=1)
+class NeighborhoodNodeResponse(BaseModel):
+    node_id: UUID
+    node_type: str
+    title: str
+    summary: str | None
+    importance: float
+    confidence: float
+    distance: int
+
+
+class NeighborhoodEdgeResponse(BaseModel):
+    edge_id: UUID
+    from_node_id: UUID
+    to_node_id: UUID
+    relation_type: str
+    connector: str
+    strength: float
+    confidence: float
+    details: str | None
+
+
+class NodeNeighborhoodResponse(BaseModel):
+    start_node_id: UUID
+    depth: int
+    nodes: list[NeighborhoodNodeResponse]
+    edges: list[NeighborhoodEdgeResponse]
+
+
+class EdgeEndpointNodeResponse(BaseModel):
+    node_id: UUID
+    node_type: str
+    title: str
+    summary: str | None
+
+
+class EdgeEvidenceAnnotationResponse(BaseModel):
+    start: int
+    length: int
+    node_id: UUID
+
+
+class EdgeEvidenceSourceResponse(BaseModel):
+    source_id: UUID
+    source_type: str
+    source_metadata: dict[str, Any]
+    created_at: datetime
+
+
+class EdgeEvidenceResponse(BaseModel):
+    evidence_id: UUID
+    raw_content: str
+    confidence: float
+    strength_boost: float
+    is_verbatim: bool
+    created_at: datetime
+    source: EdgeEvidenceSourceResponse
+    annotations: list[EdgeEvidenceAnnotationResponse]
+
+
+class EdgeDetailResponse(BaseModel):
+    edge_id: UUID
+    relation_type: str
+    inverse_relation_type: str
+    relation_description: str | None
+    connector: str
+    is_symmetric: bool
+    details: str | None
+    strength: float
+    confidence: float
+    status: EdgeStatus
+    valid_from: datetime | None
+    valid_to: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    deleted_at: datetime | None
+    deleted_reason: str | None
+    from_node: EdgeEndpointNodeResponse
+    to_node: EdgeEndpointNodeResponse
+    evidence: list[EdgeEvidenceResponse]
+
+
+class RunGraphNodeResponse(BaseModel):
+    node_id: UUID
+    node_type: str
+    title: str
+    summary: str | None
+    importance: float
+    confidence: float
+    status: RunNodeStatus
+    merged_into_node_id: UUID | None
+    change_kind: RunGraphChangeKind
+
+
+class RunGraphEdgeResponse(BaseModel):
+    edge_id: UUID
+    from_node_id: UUID
+    to_node_id: UUID
+    relation_type: str
+    connector: str
+    strength: float
+    confidence: float
+    details: str | None
+    status: EdgeStatus
+    deleted_reason: str | None
+    change_kind: RunGraphChangeKind
+
+
+class RunGraphResponse(BaseModel):
+    run_id: UUID
+    source_id: UUID
+    run_status: Literal["pending", "processing", "completed", "failed"]
+    nodes: list[RunGraphNodeResponse]
+    edges: list[RunGraphEdgeResponse]
+
+
 def get_extraction_llm() -> GroqChunkExtractionLLM:
-    return GroqChunkExtractionLLM()
+    """Build extraction from the current active PostgreSQL relation catalog."""
+
+    return GroqChunkExtractionLLM(
+        relation_definitions=load_active_relation_types()
+    )
 
 
 @lru_cache(maxsize=1)
-def get_resolver_store() -> CanonicalGraphResolverStore:
+def get_resolver_store() -> PostgresCanonicalGraphResolverStore:
     """Return live workspace-scoped canonical graph reads."""
 
     return PostgresCanonicalGraphResolverStore()
+
+
+@lru_cache(maxsize=1)
+def get_neighborhood_store() -> NodeNeighborhoodStore:
+    """Return live workspace-scoped graph traversal reads."""
+
+    return PostgresNodeNeighborhoodStore()
+
+
+@lru_cache(maxsize=1)
+def get_edge_detail_store() -> EdgeDetailStore:
+    """Return live workspace-scoped single-edge reads."""
+
+    return PostgresEdgeDetailStore()
+
+
+@lru_cache(maxsize=1)
+def get_run_graph_store() -> RunGraphStore:
+    """Return live workspace-scoped reads of per-run graph changes."""
+
+    return PostgresRunGraphStore()
 
 
 def _cors_origins() -> list[str]:
@@ -196,6 +354,15 @@ def _print_ingestion_result(run: IngestionRunRecord) -> None:
     print("\n\n".join(output))
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    await open_async_pool()
+    try:
+        yield
+    finally:
+        await close_async_pool()
+
+
 app = FastAPI(
     title="Headspace API",
     version="0.1.0",
@@ -203,6 +370,7 @@ app = FastAPI(
         "Persists source content, extracts a chunk-aggregated proposed graph, "
         "atomically applies canonical graph changes, and queries canonical nodes."
     ),
+    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -225,26 +393,21 @@ async def health() -> dict[str, str]:
 )
 async def query_node(
     request: NodeQueryRequest,
-    resolver_store: CanonicalGraphResolverStore = Depends(get_resolver_store),
+    resolver_store: NodeCandidateSearchStore = Depends(get_resolver_store),
 ) -> NodeQueryResponse:
     """Return canonical nodes ranked by the ingestion identity matcher."""
 
-    # TEMPORARY: replace with the authenticated request's workspace ID before
-    # this endpoint is used in a multi-user or production deployment.
-    workspace_id = ensure_temporary_prototype_workspace()
-    names = [request.query, *request.aliases]
-    candidates = await resolver_store.find_node_candidates(
+    workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
+    candidates = await resolver_store.search_node_candidates(
         workspace_id=workspace_id,
-        proposed_node=ProposedNode(
-            proposed_node_id="node-query",
-            node_type=request.node_type,
-            names=names,
-            primary_reference_name=request.query,
-            external_ids=[
-                ProposedExternalId(item.provider, item.external_id)
-                for item in request.external_ids
-            ],
-        ),
+        query=request.query,
+        node_type=request.node_type,
+        aliases=request.aliases,
+        external_ids=[
+            ProposedExternalId(item.provider, item.external_id)
+            for item in request.external_ids
+        ],
+        limit=request.limit,
     )
     return NodeQueryResponse(
         query=request.query,
@@ -259,9 +422,62 @@ async def query_node(
                 match_score=candidate.match_score,
                 reasons=candidate.reasons,
             )
-            for candidate in candidates[: request.limit]
+            for candidate in candidates
         ],
     )
+
+
+@app.get(
+    "/api/v1/nodes/{node_id}/graph",
+    response_model=NodeNeighborhoodResponse,
+    tags=["nodes"],
+)
+async def read_node_neighborhood(
+    node_id: UUID,
+    depth: int = Query(default=1, ge=0, le=10),
+    neighborhood_store: NodeNeighborhoodStore = Depends(get_neighborhood_store),
+) -> NodeNeighborhoodResponse:
+    """Return the active canonical graph within ``depth`` hops of a node."""
+
+    workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
+    neighborhood = await neighborhood_store.get_node_neighborhood(
+        workspace_id=workspace_id,
+        start_node_id=node_id,
+        depth=depth,
+    )
+    if neighborhood is None:
+        raise HTTPException(status_code=404, detail="Node not found.")
+
+    return NodeNeighborhoodResponse(
+        start_node_id=neighborhood.start_node_id,
+        depth=neighborhood.depth,
+        nodes=[NeighborhoodNodeResponse(**asdict(node)) for node in neighborhood.nodes],
+        edges=[NeighborhoodEdgeResponse(**asdict(edge)) for edge in neighborhood.edges],
+    )
+
+
+@app.get(
+    "/api/v1/edges/{edge_id}",
+    response_model=EdgeDetailResponse,
+    tags=["edges"],
+)
+async def read_edge(
+    edge_id: UUID,
+    edge_store: EdgeDetailStore = Depends(get_edge_detail_store),
+) -> EdgeDetailResponse:
+    """Return an edge with both endpoint nodes and all supporting evidence.
+
+    Archived edges are still returned, with their status, so links to them keep
+    working.
+    """
+
+    edge = await edge_store.get_edge_detail(
+        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        edge_id=edge_id,
+    )
+    if edge is None:
+        raise HTTPException(status_code=404, detail="Edge not found.")
+    return EdgeDetailResponse.model_validate(asdict(edge))
 
 
 @app.post(
@@ -276,11 +492,9 @@ async def create_ingestion(
     llm: ChunkExtractionLLM = Depends(get_extraction_llm),
     resolver_store: CanonicalGraphResolverStore = Depends(get_resolver_store),
 ) -> IngestionRunResponse | JSONResponse:
-    """Extract and resolve one source using temporary prototype identity routing."""
+    """Extract and resolve one source in the default development workspace."""
 
-    # TEMPORARY: replace with the authenticated request's workspace ID before
-    # this endpoint is used in a multi-user or production deployment.
-    workspace_id = ensure_temporary_prototype_workspace()
+    workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
     try:
         run = await ingest_content(
             workspace_id=workspace_id,
@@ -313,3 +527,28 @@ async def read_ingestion(run_id: UUID) -> IngestionRunResponse:
     if run is None:
         raise HTTPException(status_code=404, detail="Ingestion run not found.")
     return IngestionRunResponse.from_record(run)
+
+
+@app.get(
+    "/api/v1/ingestions/{run_id}/graph",
+    response_model=RunGraphResponse,
+    tags=["ingestion"],
+)
+async def read_ingestion_graph(
+    run_id: UUID,
+    run_graph_store: RunGraphStore = Depends(get_run_graph_store),
+) -> RunGraphResponse:
+    """Return every node and edge the run created, updated, archived, or merged.
+
+    Rows reflect the graph's current state; ``change_kind`` says what the run
+    did. Pending, processing, and failed runs return empty lists because a plan
+    is applied atomically on completion.
+    """
+
+    graph = await run_graph_store.get_run_graph(
+        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        run_id=run_id,
+    )
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ingestion run not found.")
+    return RunGraphResponse.model_validate(asdict(graph))

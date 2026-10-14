@@ -62,9 +62,6 @@ class IngestionApiTests(unittest.TestCase):
     def test_creates_ingestion_and_returns_persisted_result(self) -> None:
         expected = run_record()
         with patch(
-            "app.main.ensure_temporary_prototype_workspace",
-            return_value=expected.workspace_id,
-        ), patch(
             "app.main.ingest_content",
             new=AsyncMock(return_value=expected),
         ) as ingest, patch("builtins.print") as print_output:
@@ -87,6 +84,10 @@ class IngestionApiTests(unittest.TestCase):
         self.assertIs(
             ingest.await_args.kwargs["resolver_store"],
             self.resolver_store,
+        )
+        self.assertEqual(
+            ingest.await_args.kwargs["workspace_id"],
+            expected.workspace_id,
         )
         printed = print_output.call_args.args[0]
         self.assertIn(f"Proposed subgraph for ingestion run {expected.id}", printed)

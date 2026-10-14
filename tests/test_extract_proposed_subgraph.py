@@ -8,8 +8,10 @@ from app.workflows.extract_proposed_subgraph import (
     InvalidChunkExtractionOutputError,
     ProposedSubgraphLimitError,
     ProposedSubgraphLimits,
+    _merge_chunk_subgraph,
     extract_proposed_subgraph,
 )
+from app.workflows.resolve_proposed_subgraph import merge_edge_details
 from app.workflows.types import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
@@ -66,24 +68,11 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
         )
 
         jessica = ProposedNode("n1", "person", ["Jessica"], "Jessica")
-        jessica_handoff = ProposedNodeHandoff(
-            proposed_node_id="n1",
-            node_type="person",
-            names=["Jessica"],
-            primary_name="Jessica",
-        )
         first_output = ChunkExtractionOutput(
             chunk_subgraph=ProposedGraph(nodes=[jessica]),
-            proposed_graph_handoff=ProposedGraphHandoff(nodes=[jessica_handoff]),
             updated_extraction_context=ExtractionContext("Jessica met someone."),
         )
         sarah = ProposedNode("n2", "person", ["Sarah"], "Sarah")
-        sarah_handoff = ProposedNodeHandoff(
-            proposed_node_id="n2",
-            node_type="person",
-            names=["Sarah"],
-            primary_name="Sarah",
-        )
         met_edge = ProposedEdge(
             proposed_edge_id="e1",
             from_proposed_node_id="n1",
@@ -91,13 +80,8 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             relation_type="met",
             evidence=[ProposedEvidence("met Sarah", confidence=0.9)],
         )
-        edge_handoff = ProposedEdgeHandoff("e1", "n1", "n2", "met")
         final_output = ChunkExtractionOutput(
             chunk_subgraph=ProposedGraph(nodes=[sarah], edges=[met_edge]),
-            proposed_graph_handoff=ProposedGraphHandoff(
-                nodes=[jessica_handoff, sarah_handoff],
-                edges=[edge_handoff],
-            ),
             updated_extraction_context=ExtractionContext("Jessica met Sarah for lunch."),
         )
         llm = RecordingLLM([first_output, final_output])
@@ -112,7 +96,16 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             [edge.proposed_edge_id for edge in result.proposed_graph.edges],
             ["e1"],
         )
-        self.assertIs(result.proposed_graph_handoff, final_output.proposed_graph_handoff)
+        self.assertEqual(
+            result.proposed_graph_handoff,
+            ProposedGraphHandoff(
+                nodes=[
+                    ProposedNodeHandoff("n1", "person", ["Jessica"], "Jessica"),
+                    ProposedNodeHandoff("n2", "person", ["Sarah"], "Sarah"),
+                ],
+                edges=[ProposedEdgeHandoff("e1", "n1", "n2", "met")],
+            ),
+        )
         self.assertEqual(len(llm.calls), 2)
         first_input = llm.calls[0]
         self.assertEqual(first_input.proposed_graph_handoff.nodes, [])
@@ -121,7 +114,12 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
 
         second_input = llm.calls[1]
         self.assertIs(second_input.extraction_context, first_output.updated_extraction_context)
-        self.assertIs(second_input.proposed_graph_handoff, first_output.proposed_graph_handoff)
+        self.assertEqual(
+            second_input.proposed_graph_handoff,
+            ProposedGraphHandoff(
+                nodes=[ProposedNodeHandoff("n1", "person", ["Jessica"], "Jessica")]
+            ),
+        )
         self.assertEqual(second_input.boundary_context.previous_chunk_tail, "Jessica ")
         self.assertIsNone(second_input.boundary_context.next_chunk_head)
 
@@ -138,7 +136,7 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             "n1",
             "n2",
             "knows",
-            [ProposedEvidence("Alice employs Bob", confidence=0.8)],
+            [ProposedEvidence("Alice knows Bob", confidence=1.5)],
         )
         repaired_edge = ProposedEdge(
             "e1",
@@ -149,12 +147,10 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
         )
         invalid_output = ChunkExtractionOutput(
             chunk_subgraph=ProposedGraph(nodes=[alice, bob], edges=[invalid_edge]),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Alice knows Bob"),
         )
         repaired_output = ChunkExtractionOutput(
             chunk_subgraph=ProposedGraph(nodes=[alice, bob], edges=[repaired_edge]),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Alice knows Bob"),
         )
         llm = RecordingLLM([invalid_output, repaired_output])
@@ -165,13 +161,14 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             result.proposed_graph.edges[0].evidence[0].raw_content,
             "Alice knows Bob",
         )
+        self.assertTrue(result.proposed_graph.edges[0].evidence[0].is_verbatim)
         self.assertEqual(llm.repair_contexts[0], None)
         repair_context = llm.repair_contexts[1]
         self.assertIsNotNone(repair_context)
         self.assertIs(repair_context.invalid_output, invalid_output)
         self.assertEqual(
             [issue.code for issue in repair_context.issues],
-            ["evidence_not_in_chunk"],
+            ["invalid_evidence_confidence"],
         )
 
     async def test_bundles_issues_and_fails_after_repair_budget(self) -> None:
@@ -184,7 +181,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             chunk_subgraph=ProposedGraph(
                 nodes=[ProposedNode("n1", "person", [], "")]
             ),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Jessica"),
         )
         llm = RecordingLLM([invalid_output, invalid_output, invalid_output])
@@ -216,26 +212,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                 SourceChunk("c2", source_id, "Jess"),
             ),
         )
-        first_handoff = ProposedGraphHandoff(
-            nodes=[
-                ProposedNodeHandoff(
-                    proposed_node_id="n1",
-                    node_type="person",
-                    names=["Jessica"],
-                    primary_name="Jessica",
-                )
-            ]
-        )
-        updated_handoff = ProposedGraphHandoff(
-            nodes=[
-                ProposedNodeHandoff(
-                    proposed_node_id="n1",
-                    node_type="person",
-                    names=["Jessica", "Jess"],
-                    primary_name="Jess",
-                )
-            ]
-        )
         outputs = [
             ChunkExtractionOutput(
                 chunk_subgraph=ProposedGraph(
@@ -250,7 +226,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                         )
                     ]
                 ),
-                proposed_graph_handoff=first_handoff,
                 updated_extraction_context=ExtractionContext("Jessica"),
             ),
             ChunkExtractionOutput(
@@ -266,7 +241,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                         )
                     ]
                 ),
-                proposed_graph_handoff=updated_handoff,
                 updated_extraction_context=ExtractionContext("Jessica is also called Jess"),
             ),
         ]
@@ -291,24 +265,17 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                 SourceChunk("c2", source_id, "Jordan"),
             ),
         )
-        handoff = ProposedGraphHandoff(
-            nodes=[
-                ProposedNodeHandoff("n1", "person", ["Jordan"], "Jordan")
-            ]
-        )
         outputs = [
             ChunkExtractionOutput(
                 chunk_subgraph=ProposedGraph(
                     nodes=[ProposedNode("n1", "person", ["Jordan"], "Jordan")]
                 ),
-                proposed_graph_handoff=handoff,
                 updated_extraction_context=ExtractionContext("Jordan is a person"),
             ),
             ChunkExtractionOutput(
                 chunk_subgraph=ProposedGraph(
                     nodes=[ProposedNode("n1", "location", ["Jordan"], "Jordan")]
                 ),
-                proposed_graph_handoff=handoff,
                 updated_extraction_context=ExtractionContext("Jordan is also a country"),
             ),
         ]
@@ -323,7 +290,7 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                 max_repair_attempts=0,
             )
 
-    async def test_rejects_evidence_outside_current_chunk(self) -> None:
+    async def test_accepts_paraphrased_evidence(self) -> None:
         source_id = uuid4()
         prepared = PreparedSource(
             source_context=ExtractionSourceContext(source_id, "manual_entry", {}),
@@ -340,19 +307,18 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
         )
         output = ChunkExtractionOutput(
             chunk_subgraph=ProposedGraph(nodes=[alice, bob], edges=[edge]),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Alice knows Bob"),
         )
 
-        with self.assertRaisesRegex(
-            InvalidChunkExtractionOutputError,
-            "not a verbatim span",
-        ):
-            await extract_proposed_subgraph(
-                prepared,
-                RecordingLLM([output]),
-                max_repair_attempts=0,
-            )
+        result = await extract_proposed_subgraph(
+            prepared,
+            RecordingLLM([output]),
+            max_repair_attempts=0,
+        )
+
+        evidence = result.proposed_graph.edges[0].evidence[0]
+        self.assertEqual(evidence.raw_content, "Alice works with Bob")
+        self.assertFalse(evidence.is_verbatim)
 
     async def test_rejects_evidence_scores_outside_unit_interval(self) -> None:
         for confidence, strength_boost, expected_message in (
@@ -386,7 +352,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                             ProposedEdge("e1", "n1", "n2", "knows", [evidence])
                         ],
                     ),
-                    proposed_graph_handoff=ProposedGraphHandoff(),
                     updated_extraction_context=ExtractionContext("Alice knows Bob"),
                 )
 
@@ -418,39 +383,12 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                 nodes=[alice, bob],
                 edges=[ProposedEdge("e1", "n1", "n2", "knows", [evidence])],
             ),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Alice knows Bob"),
         )
 
         with self.assertRaisesRegex(
             InvalidChunkExtractionOutputError,
             "falls outside",
-        ):
-            await extract_proposed_subgraph(
-                prepared,
-                RecordingLLM([output]),
-                max_repair_attempts=0,
-            )
-
-    async def test_rejects_handoff_that_disagrees_with_accumulated_graph(self) -> None:
-        source_id = uuid4()
-        prepared = PreparedSource(
-            source_context=ExtractionSourceContext(source_id, "manual_entry", {}),
-            chunks=chunk_stream(SourceChunk("c1", source_id, "Jordan")),
-        )
-        output = ChunkExtractionOutput(
-            chunk_subgraph=ProposedGraph(
-                nodes=[ProposedNode("n1", "person", ["Jordan"], "Jordan")]
-            ),
-            proposed_graph_handoff=ProposedGraphHandoff(
-                nodes=[ProposedNodeHandoff("n1", "location", ["Jordan"], "Jordan")]
-            ),
-            updated_extraction_context=ExtractionContext("Jordan"),
-        )
-
-        with self.assertRaisesRegex(
-            InvalidChunkExtractionOutputError,
-            "different node type",
         ):
             await extract_proposed_subgraph(
                 prepared,
@@ -468,7 +406,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             chunk_subgraph=ProposedGraph(
                 nodes=[ProposedNode("n1", "person", ["Jessica"], "Jess")]
             ),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Jessica"),
         )
 
@@ -492,7 +429,6 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
         node = ProposedNode("n1", "person", ["Jessica"], "Jessica")
         output = ChunkExtractionOutput(
             chunk_subgraph=ProposedGraph(nodes=[node]),
-            proposed_graph_handoff=ProposedGraphHandoff(),
             updated_extraction_context=ExtractionContext("Jessica"),
         )
 
@@ -502,6 +438,68 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
                 RecordingLLM([output]),
                 limits=ProposedSubgraphLimits(max_nodes=1, max_edges=1),
             )
+
+
+class EdgeDetailsTests(unittest.TestCase):
+    def test_merge_edge_details_accumulates_without_repeats(self) -> None:
+        self.assertIsNone(merge_edge_details(None, None))
+        self.assertIsNone(merge_edge_details(None, "   "))
+        self.assertEqual(merge_edge_details(None, " usually  iced "), "usually iced")
+        self.assertEqual(merge_edge_details("usually iced", None), "usually iced")
+        self.assertEqual(
+            merge_edge_details(
+                "especially strawberry matcha lattes", "usually orders it iced"
+            ),
+            "especially strawberry matcha lattes; usually orders it iced",
+        )
+        self.assertEqual(
+            merge_edge_details("strawberry matcha lattes; iced", "Iced"),
+            "strawberry matcha lattes; iced",
+        )
+        self.assertEqual(
+            merge_edge_details("lattes", "especially strawberry lattes"),
+            "especially strawberry lattes",
+        )
+
+    def test_chunk_merge_accumulates_details_without_changing_identity(self) -> None:
+        sarah = ProposedNode("n1", "person", ["Sarah"], "Sarah")
+        matcha = ProposedNode("n2", "concept", ["Matcha"], "Matcha")
+        first = ProposedGraph(
+            nodes=[sarah, matcha],
+            edges=[
+                ProposedEdge(
+                    "e1",
+                    "n1",
+                    "n2",
+                    "likes",
+                    [ProposedEvidence("loves strawberry matcha lattes", 0.9)],
+                    details="especially strawberry matcha lattes",
+                )
+            ],
+        )
+        second = ProposedGraph(
+            edges=[
+                ProposedEdge(
+                    "e1",
+                    "n1",
+                    "n2",
+                    "likes",
+                    [ProposedEvidence("ordered it iced again", 0.7)],
+                    details="usually orders it iced",
+                )
+            ],
+        )
+
+        merged = _merge_chunk_subgraph(_merge_chunk_subgraph(ProposedGraph(), first), second)
+
+        self.assertEqual(len(merged.edges), 1)
+        self.assertEqual(merged.edges[0].relation_type, "likes")
+        self.assertEqual(
+            merged.edges[0].details,
+            "especially strawberry matcha lattes; usually orders it iced",
+        )
+        self.assertEqual(len(merged.edges[0].evidence), 2)
+        self.assertEqual(first.edges[0].details, "especially strawberry matcha lattes")
 
 
 if __name__ == "__main__":

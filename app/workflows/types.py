@@ -36,11 +36,25 @@ SourceReadStrategy: TypeAlias = Literal[
 
 NodeType: TypeAlias = Literal[
     "person",
+    "organization",
     "location",
+    "event",
+    "document",
     "date",
     "task",
     "concept",
 ]
+
+NODE_TYPES: tuple[NodeType, ...] = (
+    "person",
+    "organization",
+    "location",
+    "event",
+    "document",
+    "date",
+    "task",
+    "concept",
+)
 
 PatchActionType: TypeAlias = Literal[
     "add_node",
@@ -136,15 +150,27 @@ class ProposedEvidence:
     confidence: float
     annotations: list[ProposedEvidenceAnnotation] = field(default_factory=list)
     strength_boost: float | None = None
+    # Set by extraction code, not the model: whether raw_content appears in the
+    # chunk text. False means it was paraphrased or inferred from context.
+    is_verbatim: bool = True
 
 
 @dataclass(slots=True)
 class ProposedEdge:
+    """A proposed relationship.
+
+    relation_type is the structured identity of the edge (deduplication,
+    exclusivity, temporal handling, endpoint constraints, and structured queries).
+    details is free-text meaning that qualifies it for retrieval, display, and LLM
+    context, e.g. "especially strawberry matcha lattes; usually orders it iced".
+    """
+
     proposed_edge_id: str
     from_proposed_node_id: str
     to_proposed_node_id: str
     relation_type: str
     evidence: list[ProposedEvidence] = field(default_factory=list)
+    details: str | None = None
 
 
 @dataclass(slots=True)
@@ -261,7 +287,6 @@ class ExtractionRepairItem:
 @dataclass(frozen=True, slots=True)
 class ChunkExtractionOutput:
     chunk_subgraph: ProposedGraph
-    proposed_graph_handoff: ProposedGraphHandoff
     updated_extraction_context: ExtractionContext
     repair_items: list[ExtractionRepairItem] = field(default_factory=list)
 

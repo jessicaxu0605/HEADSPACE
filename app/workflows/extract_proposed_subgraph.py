@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterable, AsyncIterator
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
+from app.workflows.resolve_proposed_subgraph import merge_edge_details
 from app.workflows.types import (
     BoundaryContext,
     ChunkExtractionInput,
@@ -16,16 +17,19 @@ from app.workflows.types import (
     ExtractionContext,
     ExtractionSourceContext,
     ExtractionValidationIssue,
+    NODE_TYPES,
     PreparedSource,
     PreviousIngestContext,
+    ProposedEdgeHandoff,
     ProposedGraph,
     ProposedGraphHandoff,
+    ProposedNodeHandoff,
     ProposedSubgraphExtractionResult,
     SourceChunk,
 )
 
 
-VALID_NODE_TYPES = {"person", "location", "date", "task", "concept"}
+VALID_NODE_TYPES = set(NODE_TYPES)
 
 
 class ChunkExtractionLLM(Protocol):
@@ -101,20 +105,20 @@ def build_chunk_extraction_input(
     current_chunk: SourceChunk,
     *,
     previous_output: ChunkExtractionOutput | None = None,
+    proposed_graph: ProposedGraph | None = None,
     previous_chunk: SourceChunk | None = None,
     next_chunk: SourceChunk | None = None,
     previous_ingest_context: PreviousIngestContext | None = None,
     boundary_chars: int = 500,
 ) -> ChunkExtractionInput:
     """Build a model input, carrying forward snapshot state when available."""
-    is_first_chunk = previous_output is None and previous_chunk is None
-
-    if is_first_chunk:
+    if previous_output is None:
         extraction_context = build_initial_extraction_context(source_context)
-        proposed_graph_handoff = ProposedGraphHandoff()
     else:
         extraction_context = previous_output.updated_extraction_context
-        proposed_graph_handoff = previous_output.proposed_graph_handoff
+    proposed_graph_handoff = build_proposed_graph_handoff(
+        proposed_graph or ProposedGraph()
+    )
 
     boundary_context = _build_boundary_context(
         previous_chunk=previous_chunk,
@@ -158,6 +162,7 @@ async def extract_proposed_subgraph(
             prepared_source.source_context,
             current_chunk,
             previous_output=previous_output,
+            proposed_graph=proposed_graph,
             previous_chunk=previous_chunk,
             next_chunk=next_chunk,
             previous_ingest_context=previous_ingest_context,
@@ -170,27 +175,17 @@ async def extract_proposed_subgraph(
                 extraction_input=extraction_input,
                 repair_context=repair_context,
             )
+            _mark_verbatim_evidence(output.chunk_subgraph, current_chunk.text)
             issues = _collect_chunk_subgraph_issues(
                 output.chunk_subgraph,
-                current_chunk=current_chunk,
                 accumulated_graph=proposed_graph,
             )
 
-            candidate_graph: ProposedGraph | None = None
             if not issues:
                 candidate_graph = _merge_chunk_subgraph(
                     proposed_graph,
                     output.chunk_subgraph,
                 )
-                issues.extend(
-                    _collect_handoff_issues(
-                        output.proposed_graph_handoff,
-                        candidate_graph,
-                    )
-                )
-
-            if not issues:
-                assert candidate_graph is not None
                 _halt_on_proposed_subgraph_limit(candidate_graph, limits)
                 proposed_graph = candidate_graph
                 repair_items.extend(output.repair_items)
@@ -215,7 +210,7 @@ async def extract_proposed_subgraph(
     if previous_output is not None:
         return ProposedSubgraphExtractionResult(
             proposed_graph=proposed_graph,
-            proposed_graph_handoff=previous_output.proposed_graph_handoff,
+            proposed_graph_handoff=build_proposed_graph_handoff(proposed_graph),
             updated_extraction_context=previous_output.updated_extraction_context,
             repair_items=repair_items,
         )
@@ -267,10 +262,40 @@ def _build_boundary_context(
     )
 
 
+def build_proposed_graph_handoff(proposed_graph: ProposedGraph) -> ProposedGraphHandoff:
+    """Derive the cross-chunk identity context from the accumulated graph.
+
+    The model no longer writes the handoff: rewriting every node each chunk used
+    about a third of the output budget and was a common source of repairs.
+    """
+
+    return ProposedGraphHandoff(
+        nodes=[
+            ProposedNodeHandoff(
+                proposed_node_id=node.proposed_node_id,
+                node_type=node.node_type,
+                names=list(node.names),
+                primary_name=node.primary_reference_name,
+                external_ids=list(node.external_ids),
+                handoff_description=node.summary,
+            )
+            for node in proposed_graph.nodes
+        ],
+        edges=[
+            ProposedEdgeHandoff(
+                proposed_edge_id=edge.proposed_edge_id,
+                from_proposed_node_id=edge.from_proposed_node_id,
+                to_proposed_node_id=edge.to_proposed_node_id,
+                relation_type=edge.relation_type,
+            )
+            for edge in proposed_graph.edges
+        ],
+    )
+
+
 def _collect_chunk_subgraph_issues(
     chunk_subgraph: ProposedGraph,
     *,
-    current_chunk: SourceChunk,
     accumulated_graph: ProposedGraph,
 ) -> list[ExtractionValidationIssue]:
     issues: list[ExtractionValidationIssue] = []
@@ -451,15 +476,6 @@ def _collect_chunk_subgraph_issues(
                         "must be between 0 and 1.",
                     )
                 )
-            if evidence.raw_content not in current_chunk.text:
-                issues.append(
-                    _issue(
-                        "evidence_not_in_chunk",
-                        f"{evidence_path}.raw_content",
-                        f"Evidence for edge {edge.proposed_edge_id!r} is not a "
-                        "verbatim span of the current chunk.",
-                    )
-                )
             for annotation_index, annotation in enumerate(evidence.annotations):
                 annotation_path = (
                     f"{evidence_path}.annotations[{annotation_index}]"
@@ -495,190 +511,6 @@ def _collect_chunk_subgraph_issues(
     return issues
 
 
-def _collect_handoff_issues(
-    handoff: ProposedGraphHandoff,
-    accumulated_graph: ProposedGraph,
-) -> list[ExtractionValidationIssue]:
-    issues: list[ExtractionValidationIssue] = []
-    handoff_node_ids = [node.proposed_node_id for node in handoff.nodes]
-    if len(handoff_node_ids) != len(set(handoff_node_ids)):
-        issues.append(
-            _issue(
-                "duplicate_handoff_node_id",
-                "proposed_graph_handoff.nodes",
-                "Proposed graph handoff contains duplicate node IDs.",
-            )
-        )
-
-    handoff_edge_ids = [edge.proposed_edge_id for edge in handoff.edges]
-    if len(handoff_edge_ids) != len(set(handoff_edge_ids)):
-        issues.append(
-            _issue(
-                "duplicate_handoff_edge_id",
-                "proposed_graph_handoff.edges",
-                "Proposed graph handoff contains duplicate edge IDs.",
-            )
-        )
-
-    nodes_by_id = {
-        node.proposed_node_id: node for node in accumulated_graph.nodes
-    }
-    for node_index, handoff_node in enumerate(handoff.nodes):
-        node_path = f"proposed_graph_handoff.nodes[{node_index}]"
-        _collect_nonempty_issue(
-            issues,
-            handoff_node.proposed_node_id,
-            code="empty_handoff_node_id",
-            path=f"{node_path}.proposed_node_id",
-            description="Handoff node ID",
-        )
-        _collect_nonempty_issue(
-            issues,
-            handoff_node.primary_name,
-            code="empty_handoff_primary_name",
-            path=f"{node_path}.primary_name",
-            description=f"Handoff node {handoff_node.proposed_node_id!r} primary name",
-        )
-        if handoff_node.primary_name not in handoff_node.names:
-            issues.append(
-                _issue(
-                    "handoff_primary_name_missing_from_names",
-                    f"{node_path}.primary_name",
-                    f"Handoff node {handoff_node.proposed_node_id!r} primary name "
-                    "must appear in its names.",
-                )
-            )
-        for name_index, name in enumerate(handoff_node.names):
-            _collect_nonempty_issue(
-                issues,
-                name,
-                code="empty_handoff_node_name",
-                path=f"{node_path}.names[{name_index}]",
-                description=f"Handoff node {handoff_node.proposed_node_id!r} name",
-            )
-        for external_id_index, external_id in enumerate(handoff_node.external_ids):
-            external_id_path = f"{node_path}.external_ids[{external_id_index}]"
-            _collect_nonempty_issue(
-                issues,
-                external_id.provider,
-                code="empty_handoff_external_id_provider",
-                path=f"{external_id_path}.provider",
-                description=(
-                    f"Handoff node {handoff_node.proposed_node_id!r} external ID provider"
-                ),
-            )
-            _collect_nonempty_issue(
-                issues,
-                external_id.external_id,
-                code="empty_handoff_external_id_value",
-                path=f"{external_id_path}.external_id",
-                description=(
-                    f"Handoff node {handoff_node.proposed_node_id!r} external ID value"
-                ),
-            )
-        accumulated_node = nodes_by_id.get(handoff_node.proposed_node_id)
-        if accumulated_node is None:
-            issues.append(
-                _issue(
-                    "handoff_node_not_in_graph",
-                    node_path,
-                    "Proposed graph handoff contains a node absent from the "
-                    "accumulated graph.",
-                )
-            )
-            continue
-        if handoff_node.node_type != accumulated_node.node_type:
-            issues.append(
-                _issue(
-                    "handoff_node_type_mismatch",
-                    f"{node_path}.node_type",
-                    f"Handoff node {handoff_node.proposed_node_id!r} has a "
-                    "different node type than the accumulated graph.",
-                )
-            )
-        if handoff_node.primary_name != accumulated_node.primary_reference_name:
-            issues.append(
-                _issue(
-                    "handoff_primary_name_mismatch",
-                    f"{node_path}.primary_name",
-                    f"Handoff node {handoff_node.proposed_node_id!r} has a "
-                    "different primary name than the accumulated graph.",
-                )
-            )
-        if not set(handoff_node.names).issubset(accumulated_node.names):
-            issues.append(
-                _issue(
-                    "unknown_handoff_name",
-                    f"{node_path}.names",
-                    f"Handoff node {handoff_node.proposed_node_id!r} contains "
-                    "unknown names.",
-                )
-            )
-        if not set(handoff_node.external_ids).issubset(accumulated_node.external_ids):
-            issues.append(
-                _issue(
-                    "unknown_handoff_external_id",
-                    f"{node_path}.external_ids",
-                    f"Handoff node {handoff_node.proposed_node_id!r} contains "
-                    "unknown external IDs.",
-                )
-            )
-
-    edges_by_id = {
-        edge.proposed_edge_id: edge for edge in accumulated_graph.edges
-    }
-    available_handoff_node_ids = set(handoff_node_ids)
-    for edge_index, handoff_edge in enumerate(handoff.edges):
-        edge_path = f"proposed_graph_handoff.edges[{edge_index}]"
-        _collect_nonempty_issue(
-            issues,
-            handoff_edge.proposed_edge_id,
-            code="empty_handoff_edge_id",
-            path=f"{edge_path}.proposed_edge_id",
-            description="Handoff edge ID",
-        )
-        accumulated_edge = edges_by_id.get(handoff_edge.proposed_edge_id)
-        if accumulated_edge is None:
-            issues.append(
-                _issue(
-                    "handoff_edge_not_in_graph",
-                    edge_path,
-                    "Proposed graph handoff contains an edge absent from the "
-                    "accumulated graph.",
-                )
-            )
-            continue
-        if (
-            handoff_edge.from_proposed_node_id
-            != accumulated_edge.from_proposed_node_id
-            or handoff_edge.to_proposed_node_id
-            != accumulated_edge.to_proposed_node_id
-            or handoff_edge.relation_type != accumulated_edge.relation_type
-        ):
-            issues.append(
-                _issue(
-                    "handoff_edge_identity_mismatch",
-                    edge_path,
-                    f"Handoff edge {handoff_edge.proposed_edge_id!r} conflicts "
-                    "with the accumulated graph.",
-                )
-            )
-        if (
-            handoff_edge.from_proposed_node_id not in available_handoff_node_ids
-            or handoff_edge.to_proposed_node_id not in available_handoff_node_ids
-        ):
-            issues.append(
-                _issue(
-                    "handoff_edge_endpoint_missing",
-                    edge_path,
-                    f"Handoff edge {handoff_edge.proposed_edge_id!r} is missing "
-                    "an endpoint from the handoff nodes.",
-                )
-            )
-
-    return issues
-
-
 def _collect_nonempty_issue(
     issues: list[ExtractionValidationIssue],
     value: object,
@@ -691,6 +523,25 @@ def _collect_nonempty_issue(
         issues.append(
             _issue(code, path, f"{description} must be non-empty.")
         )
+
+
+def _mark_verbatim_evidence(chunk_subgraph: ProposedGraph, chunk_text: str) -> None:
+    """Flag evidence that is not a span of the chunk instead of rejecting it."""
+
+    normalized_chunk = _normalize_whitespace(chunk_text)
+    for edge in chunk_subgraph.edges:
+        edge.evidence = [
+            replace(
+                evidence,
+                is_verbatim=_normalize_whitespace(evidence.raw_content)
+                in normalized_chunk,
+            )
+            for evidence in edge.evidence
+        ]
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join(text.split())
 
 
 def _issue(code: str, path: str, message: str) -> ExtractionValidationIssue:
@@ -750,6 +601,9 @@ def _merge_chunk_subgraph(
         existing_edge = edges_by_id.get(incoming_edge.proposed_edge_id)
         if existing_edge is None:
             merged_graph.edges.append(deepcopy(incoming_edge))
+            merged_graph.edges[-1].details = merge_edge_details(
+                None, incoming_edge.details
+            )
             edges_by_id[incoming_edge.proposed_edge_id] = merged_graph.edges[-1]
             continue
 
@@ -762,6 +616,9 @@ def _merge_chunk_subgraph(
         )
 
         _append_unique(existing_edge.evidence, incoming_edge.evidence)
+        existing_edge.details = merge_edge_details(
+            existing_edge.details, incoming_edge.details
+        )
 
     return merged_graph
 

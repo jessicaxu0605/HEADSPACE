@@ -6,6 +6,7 @@ SELECT
   e.to_node_id,
   e.relation_type_id,
   rt.name AS relation_type,
+  e.details,
   e.strength,
   e.confidence,
   CASE
@@ -28,6 +29,7 @@ SELECT
   e.from_node_id AS to_node_id,
   e.relation_type_id,
   rt.inverse_name AS relation_type,
+  e.details,
   e.strength,
   e.confidence,
   CASE

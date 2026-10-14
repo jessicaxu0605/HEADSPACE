@@ -14,3 +14,5 @@ venv/
 .storage/
 
 AGENTS.md
+
+INGEST_HANDOFF.md

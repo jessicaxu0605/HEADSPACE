@@ -14,6 +14,7 @@ from app.workflows.groq_chunk_extraction import (
     GroqChunkExtractionLLM,
 )
 from app.workflows.extract_proposed_subgraph import extract_proposed_subgraph
+from app.workflows.postgres_canonical_graph import load_active_relation_types
 from app.workflows.types import (
     ExtractionSourceContext,
     PreparedSource,
@@ -66,7 +67,10 @@ class GroqApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         source = prepared_source("Alice knows Bob.")
         result = await extract_proposed_subgraph(
             source,
-            GroqChunkExtractionLLM(max_completion_tokens=2_000),
+            GroqChunkExtractionLLM(
+                relation_definitions=load_active_relation_types(),
+                max_completion_tokens=2_000,
+            ),
             boundary_chars=0,
         )
 
@@ -93,7 +97,10 @@ class GroqApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
         source = prepared_source(*chunk_texts)
         result = await extract_proposed_subgraph(
             source,
-            GroqChunkExtractionLLM(max_completion_tokens=2_000),
+            GroqChunkExtractionLLM(
+                relation_definitions=load_active_relation_types(),
+                max_completion_tokens=2_000,
+            ),
             boundary_chars=0,
         )
 

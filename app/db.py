@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from uuid import UUID
 
 import psycopg
 from dotenv import dotenv_values
+from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 
 
 DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
+_async_pool: AsyncConnectionPool | None = None
 
 
 def get_database_url() -> str:
@@ -30,6 +32,8 @@ def get_database_url() -> str:
 
 @contextmanager
 def get_connection() -> Iterator[psycopg.Connection]:
+    """Open an isolated synchronous connection for migrations and legacy writes."""
+
     connect_timeout = int(os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "10"))
     with psycopg.connect(
         get_database_url(),
@@ -39,42 +43,60 @@ def get_connection() -> Iterator[psycopg.Connection]:
         yield conn
 
 
-# TEMPORARY PROTOTYPE IDENTITY BOOTSTRAP.
-#
-# Remove these hardcoded identities as soon as authentication/workspace selection
-# exists. They are not derived from a real user, tenant, request, or AWS resource
-# and must not be used for a multi-user or production deployment.
-TEMPORARY_PROTOTYPE_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-TEMPORARY_PROTOTYPE_WORKSPACE_ID = UUID("00000000-0000-0000-0000-000000000002")
+def get_async_pool() -> AsyncConnectionPool:
+    """Return the process-wide pool used by asynchronous request handlers."""
+
+    global _async_pool
+    if _async_pool is None:
+        connect_timeout = int(os.getenv("DATABASE_CONNECT_TIMEOUT_SECONDS", "10"))
+        min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "1"))
+        max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "5"))
+        _async_pool = AsyncConnectionPool(
+            conninfo=get_database_url(),
+            min_size=min_size,
+            max_size=max_size,
+            # Neon closes idle connections; validate on checkout and recycle
+            # before the server drops them.
+            check=AsyncConnectionPool.check_connection,
+            max_idle=float(os.getenv("DATABASE_POOL_MAX_IDLE_SECONDS", "60")),
+            kwargs={
+                "row_factory": dict_row,
+                "connect_timeout": connect_timeout,
+            },
+            open=False,
+        )
+    return _async_pool
 
 
-def ensure_temporary_prototype_workspace() -> UUID:
-    """TEMPORARY: create the unauthenticated single-user prototype workspace."""
+async def open_async_pool() -> None:
+    """Open the request pool and verify its minimum connections are ready."""
 
-    with get_connection() as conn:
-        with conn.transaction():
-            conn.execute(
-                """
-                INSERT INTO users (id, email, display_name)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (id) DO NOTHING
-                """,
-                (
-                    TEMPORARY_PROTOTYPE_USER_ID,
-                    "prototype@headspace.invalid",
-                    "Prototype User",
-                ),
-            )
-            conn.execute(
-                """
-                INSERT INTO workspaces (id, name, created_by_user_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (id) DO NOTHING
-                """,
-                (
-                    TEMPORARY_PROTOTYPE_WORKSPACE_ID,
-                    "Headspace Prototype",
-                    TEMPORARY_PROTOTYPE_USER_ID,
-                ),
-            )
-    return TEMPORARY_PROTOTYPE_WORKSPACE_ID
+    pool = get_async_pool()
+    await pool.open()
+    await pool.wait()
+
+
+async def close_async_pool() -> None:
+    """Close all pooled request connections."""
+
+    global _async_pool
+    if _async_pool is None:
+        return
+    pool = _async_pool
+    _async_pool = None
+    await pool.close()
+
+
+@asynccontextmanager
+async def get_async_connection() -> AsyncIterator[psycopg.AsyncConnection]:
+    """Check out one connection from the application-lifetime async pool."""
+
+    async with get_async_pool().connection() as conn:
+        yield conn
+
+
+# Requests without authenticated workspace context use this development workspace.
+# It is provisioned once by the database migrations rather than on every request.
+DEFAULT_DEVELOPMENT_WORKSPACE_ID = UUID(
+    "00000000-0000-0000-0000-000000000002"
+)
