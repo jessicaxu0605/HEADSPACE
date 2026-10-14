@@ -41,6 +41,27 @@ export type MemoryGraphNeighborhood = {
 
 export type MemoryEdgeStatus = "active" | "scheduled" | "expired" | "deleted";
 
+export type MemoryRunChangeKind = "created" | "updated" | "archived" | "merged";
+
+export type MemoryRunGraph = {
+  run_id: string;
+  source_id: string;
+  run_status: "pending" | "processing" | "completed" | "failed";
+  nodes: (MemoryNodeReference & {
+    summary: string | null;
+    importance: number;
+    confidence: number;
+    status: "active" | "merged" | "deleted";
+    merged_into_node_id: string | null;
+    change_kind: MemoryRunChangeKind;
+  })[];
+  edges: (MemoryGraphEdge & {
+    status: MemoryEdgeStatus;
+    deleted_reason: string | null;
+    change_kind: MemoryRunChangeKind;
+  })[];
+};
+
 export type MemoryEdgeEndpoint = MemoryNodeReference & {
   summary: string | null;
 };

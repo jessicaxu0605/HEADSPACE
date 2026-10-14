@@ -13,7 +13,7 @@ SET
   future_connector = connectors.future_connector
 FROM (
   VALUES
-    ('related_to', 'is related to', 'was related to', 'will be related to'),
+    ('related_to', 'is connected to', 'was connected to', 'will be connected to'),
     ('associated_with', 'is associated with', 'was associated with', 'will be associated with'),
     ('possibly_same_as', 'is possibly the same as', 'was possibly the same as', 'will possibly be the same as'),
     ('is_a', 'is a', 'was a', 'will be a'),

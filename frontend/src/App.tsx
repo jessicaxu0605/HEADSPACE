@@ -111,6 +111,14 @@ export default function App() {
     }
   };
 
+  const viewRun = (runId: string): void => {
+    selectedNodeIdRef.current = null;
+    selectedButtonRef.current = null;
+    // The graph page hides the entry section, so jump rather than animate.
+    window.scrollTo({ top: 0 });
+    void graphExplorer.openRun(runId);
+  };
+
   const isGraphPage = graphExplorer.selection !== null;
 
   return (
@@ -166,6 +174,7 @@ export default function App() {
       <TextEntryInterface
         sectionRef={entrySectionRef}
         textareaRef={textareaRef}
+        onViewRun={viewRun}
       />
     </main>
   );

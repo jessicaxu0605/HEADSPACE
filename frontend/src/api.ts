@@ -3,6 +3,7 @@ import type {
   MemoryGraphNeighborhood,
   MemoryNodeReference,
   MemoryNodeType,
+  MemoryRunGraph,
 } from "./memory_graph";
 
 export type IngestionRun = {
@@ -114,6 +115,22 @@ export const getNodeNeighborhood = async (
   const depth = options.depth ?? 2;
   const payload = await requestJson<NodeNeighborhoodResponse>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/graph?depth=${depth}`,
+    { signal: options.signal },
+  );
+
+  if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+    throw new Error("The API returned an unexpected response.");
+  }
+
+  return payload;
+};
+
+export const getIngestionGraph = async (
+  runId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<MemoryRunGraph> => {
+  const payload = await requestJson<MemoryRunGraph>(
+    `/api/v1/ingestions/${encodeURIComponent(runId)}/graph`,
     { signal: options.signal },
   );
 

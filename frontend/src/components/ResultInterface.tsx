@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { NodeNeighborhoodResponse, NodeQueryMatch } from "../api";
+import type { GraphSelection } from "../hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "../memory_graph";
 import BlurredContainer from "./BlurredContainer";
 import NeighborhoodGraph from "./NeighborhoodGraph";
@@ -10,7 +11,7 @@ type ResultInterfaceProps = {
   expandNoticeIsError: boolean;
   graph: NodeNeighborhoodResponse | null;
   graphLoading: boolean;
-  graphSelection: MemoryNodeReference | null;
+  graphSelection: GraphSelection | null;
   graphStatus: string;
   graphStatusIsError: boolean;
   matches: NodeQueryMatch[];
@@ -44,11 +45,16 @@ export default function ResultInterface({
   // The relationship page covers the graph rather than replacing it, so the
   // graph keeps its layout and zoom for when the reader comes back.
   const [openEdgeId, setOpenEdgeId] = useState<string | null>(null);
-  const graphNodeId = graphSelection?.node_id ?? null;
+  const graphSelectionKey =
+    graphSelection === null
+      ? null
+      : graphSelection.kind === "run"
+        ? `run:${graphSelection.run_id}`
+        : `node:${graphSelection.node_id}`;
 
   useEffect(() => {
     setOpenEdgeId(null);
-  }, [graphNodeId]);
+  }, [graphSelectionKey]);
 
   if (!graphSelection) {
     return (
@@ -107,11 +113,13 @@ export default function ResultInterface({
     );
   }
 
+  const isRunView = graphSelection.kind === "run";
   const nodesById = new Map(graph?.nodes.map((node) => [node.node_id, node]));
   const startNode = graph ? nodesById.get(graph.start_node_id) : undefined;
   const connectedCount =
     graph?.nodes.filter((node) => node.node_id !== graph.start_node_id)
       .length ?? 0;
+  const runNodeCount = graph?.nodes.length ?? 0;
 
   return (
     <>
@@ -126,7 +134,7 @@ export default function ResultInterface({
           className="graph-topbar"
         >
           <button className="graph-back" type="button" onClick={onBack}>
-            ← back to results
+            {isRunView ? "← back" : "← back to results"}
           </button>
         </BlurredContainer>
         {graphStatus && (
@@ -148,19 +156,35 @@ export default function ResultInterface({
               className="graph-header"
               ref={graphHeaderRef}
             >
-              <p className="graph-kicker">
-                {startNode?.node_type ?? graphSelection.node_type}
-              </p>
-              <h2 className="graph-title">
-                {startNode?.title ?? graphSelection.title}
-              </h2>
-              {startNode?.summary && (
-                <p className="graph-summary">{startNode.summary}</p>
+              {graphSelection.kind === "run" ? (
+                <>
+                  <p className="graph-kicker">new memory</p>
+                  <h2 className="graph-title">what you just shared</h2>
+                  <p className="graph-summary">
+                    {runNodeCount === 1
+                      ? "1 thing remembered"
+                      : `${runNodeCount} things remembered`}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="graph-kicker">
+                    {startNode?.node_type ?? graphSelection.node_type}
+                  </p>
+                  <h2 className="graph-title">
+                    {startNode?.title ?? graphSelection.title}
+                  </h2>
+                  {startNode?.summary && (
+                    <p className="graph-summary">{startNode.summary}</p>
+                  )}
+                </>
               )}
             </BlurredContainer>
 
             <section className="graph-section">
-              {connectedCount === 0 ? (
+              {isRunView && runNodeCount === 0 ? (
+                <p className="graph-empty">nothing new was remembered.</p>
+              ) : !isRunView && connectedCount === 0 ? (
                 <p className="graph-empty">no connected nodes yet.</p>
               ) : (
                 <NeighborhoodGraph
@@ -178,7 +202,9 @@ export default function ResultInterface({
                 role={expandNoticeIsError ? "alert" : undefined}
               >
                 {expandNotice ||
-                  `within ${graph.depth} ${graph.depth === 1 ? "degree" : "degrees"}`}
+                  (isRunView
+                    ? "everything this memory touched"
+                    : `within ${graph.depth} ${graph.depth === 1 ? "degree" : "degrees"}`)}
               </p>
             </section>
           </div>

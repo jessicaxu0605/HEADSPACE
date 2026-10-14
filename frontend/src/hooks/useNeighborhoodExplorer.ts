@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  getIngestionGraph,
   getNodeNeighborhood,
   type NodeNeighborhoodResponse,
 } from "../api";
-import type { MemoryNodeReference } from "../memory_graph";
+import type { MemoryNodeReference, MemoryRunGraph } from "../memory_graph";
+
+// The graph page centers on one node, or shows everything one ingestion run touched.
+export type GraphSelection =
+  | ({ kind: "node" } & MemoryNodeReference)
+  | { kind: "run"; run_id: string };
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
@@ -34,9 +40,38 @@ export const mergeNeighborhood = (
   };
 };
 
+// A run graph has no start node; every node sits at distance 0 so any can be expanded.
+export const runGraphToNeighborhood = (
+  run: MemoryRunGraph,
+): NodeNeighborhoodResponse => {
+  const nodes = run.nodes
+    .filter((node) => node.status === "active")
+    .map((node) => ({
+      node_id: node.node_id,
+      node_type: node.node_type,
+      title: node.title,
+      summary: node.summary,
+      importance: node.importance,
+      confidence: node.confidence,
+      distance: 0,
+    }));
+  const edges = run.edges
+    .filter((edge) => edge.status !== "deleted")
+    .map((edge) => ({
+      edge_id: edge.edge_id,
+      from_node_id: edge.from_node_id,
+      to_node_id: edge.to_node_id,
+      relation_type: edge.relation_type,
+      connector: edge.connector,
+      strength: edge.strength,
+      confidence: edge.confidence,
+      details: edge.details,
+    }));
+  return { start_node_id: "", depth: 0, nodes, edges };
+};
+
 export default function useNeighborhoodExplorer() {
-  const [selection, setSelection] =
-    useState<MemoryNodeReference | null>(null);
+  const [selection, setSelection] = useState<GraphSelection | null>(null);
   const [graph, setGraph] = useState<NodeNeighborhoodResponse | null>(null);
   const [status, setStatus] = useState("");
   const [statusIsError, setStatusIsError] = useState(false);
@@ -82,7 +117,7 @@ export default function useNeighborhoodExplorer() {
       graphControllerRef.current?.abort();
       const request = new AbortController();
       graphControllerRef.current = request;
-      setSelection(nextSelection);
+      setSelection({ kind: "node", ...nextSelection });
       setGraph(null);
       resetExpansions();
       setLoading(true);
@@ -103,6 +138,43 @@ export default function useNeighborhoodExplorer() {
           const message =
             error instanceof Error ? error.message : "Something went wrong.";
           setStatus(`Couldn’t load this node’s connections. ${message}`);
+          setStatusIsError(true);
+        }
+      } finally {
+        if (graphControllerRef.current === request) {
+          graphControllerRef.current = null;
+          setLoading(false);
+        }
+      }
+    },
+    [resetExpansions],
+  );
+
+  const openRun = useCallback(
+    async (runId: string): Promise<void> => {
+      graphControllerRef.current?.abort();
+      const request = new AbortController();
+      graphControllerRef.current = request;
+      setSelection({ kind: "run", run_id: runId });
+      setGraph(null);
+      resetExpansions();
+      setLoading(true);
+      setStatus("gathering what this memory touched…");
+      setStatusIsError(false);
+
+      try {
+        const payload = await getIngestionGraph(runId, {
+          signal: request.signal,
+        });
+        if (graphControllerRef.current !== request) return;
+        setGraph(runGraphToNeighborhood(payload));
+        setStatus("");
+        setStatusIsError(false);
+      } catch (error) {
+        if (!isAbortError(error) && graphControllerRef.current === request) {
+          const message =
+            error instanceof Error ? error.message : "Something went wrong.";
+          setStatus(`Couldn’t load this memory. ${message}`);
           setStatusIsError(true);
         }
       } finally {
@@ -188,6 +260,7 @@ export default function useNeighborhoodExplorer() {
     expandNotice,
     expandNoticeIsError,
     open,
+    openRun,
     expand,
     close,
   };

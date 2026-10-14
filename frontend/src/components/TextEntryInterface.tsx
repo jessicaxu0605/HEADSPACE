@@ -14,6 +14,7 @@ import BlurredContainer from "./BlurredContainer";
 type TextEntryInterfaceProps = {
   sectionRef: RefObject<HTMLElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  onViewRun: (runId: string) => void;
 };
 
 type SubmissionNotification = {
@@ -22,6 +23,7 @@ type SubmissionNotification = {
   requestId: string;
   state: "pending" | "success" | "error";
   message?: string;
+  runId?: string;
 };
 
 const textareaMaxHeight = 240;
@@ -51,6 +53,7 @@ const newRequestId = (): string => {
 export default function TextEntryInterface({
   sectionRef,
   textareaRef,
+  onViewRun,
 }: TextEntryInterfaceProps) {
   const [content, setContent] = useState("");
   const [notifications, setNotifications] = useState<
@@ -188,12 +191,20 @@ export default function TextEntryInterface({
   const submitInBackground = useCallback(
     async (request: SubmissionNotification) => {
       try {
-        await createManualIngestion(request.content, request.requestId);
+        const run = await createManualIngestion(
+          request.content,
+          request.requestId,
+        );
         if (!isMountedRef.current) return;
         setNotifications((current) =>
           current.map((notification) =>
             notification.id === request.id
-              ? { ...notification, state: "success", message: undefined }
+              ? {
+                  ...notification,
+                  state: "success",
+                  message: undefined,
+                  runId: run.id,
+                }
               : notification,
           ),
         );
@@ -319,6 +330,18 @@ export default function TextEntryInterface({
                   : notification.message}
             </p>
             <div className="notification-actions">
+              {notification.state === "success" && notification.runId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const runId = notification.runId;
+                    dismissNotification(notification.id);
+                    if (runId) onViewRun(runId);
+                  }}
+                >
+                  view
+                </button>
+              )}
               {notification.state === "error" && (
                 <button
                   type="button"
