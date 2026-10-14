@@ -18,22 +18,366 @@ body {
   background: #fff;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 ::selection {
   color: #24231f;
   background: #eeece7;
 }
 
-main {
+.page-stack {
+  width: 100%;
+}
+
+.screen {
   min-height: 100vh;
   min-height: 100svh;
-  display: grid;
-  place-items: center;
   padding: clamp(40px, 10vw, 120px) clamp(24px, 10vw, 140px);
 }
 
+.landing {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: center;
+  background: #fff;
+}
+
+.page-stack.is-graph-page .landing {
+  align-items: start;
+  padding: 32px clamp(24px, 4vw, 56px) 24px;
+}
+
+.page-stack.is-graph-page .search-wrap {
+  width: 100%;
+  margin-top: 0;
+}
+
+.page-stack.is-graph-page .entry,
+.page-stack.is-graph-page .continue-button {
+  display: none;
+}
+
+.search-wrap {
+  width: min(100%, 680px);
+  margin: auto;
+  animation: soften-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.search-form {
+  position: relative;
+  margin: 0;
+}
+
+.search-feedback {
+  min-height: 2.5rem;
+}
+
+.search-results {
+  display: grid;
+  gap: 0;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search-result {
+  border-bottom: 1px solid #ebe9e4;
+  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.search-result-button,
+.graph-back {
+  font: inherit;
+}
+
+.search-result-button {
+  display: block;
+  width: 100%;
+  padding: 18px 36px 17px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background-color 260ms ease,
+    padding-left 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.search-result-button:hover,
+.search-result-button:focus-visible {
+  padding-left: 42px;
+  background: #faf9f7;
+  outline: 0;
+}
+
+.search-result:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.search-result:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.search-result:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.search-result:nth-child(5) {
+  animation-delay: 180ms;
+}
+
+.search-result-title,
+.search-result-meta,
+.search-result-aliases,
+.search-status {
+  margin: 0;
+}
+
+.search-result-title {
+  display: block;
+  color: #34332f;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 1.18rem;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+}
+
+.search-result-meta,
+.search-result-aliases,
+.search-status {
+  color: #8c8981;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.search-result-meta {
+  display: block;
+  margin-top: 3px;
+  text-transform: capitalize;
+}
+
+.search-result-aliases {
+  display: block;
+  margin-top: 2px;
+}
+
+.graph-view {
+  padding-top: 4px;
+  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.graph-view[hidden] {
+  display: none;
+}
+
+.graph-back {
+  padding: 0;
+  color: #8c8981;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 0.92rem;
+}
+
+.graph-back:hover,
+.graph-back:focus-visible {
+  color: #34332f;
+  outline: 0;
+}
+
+.graph-status,
+.graph-kicker,
+.graph-summary,
+.graph-empty {
+  margin: 0;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+}
+
+.graph-status {
+  padding: 28px 0 0;
+  color: #8c8981;
+  font-size: 0.95rem;
+}
+
+.graph-status[hidden] {
+  display: none;
+}
+
+.graph-view.is-loading .graph-back {
+  opacity: 0.55;
+}
+
+.graph-header {
+  padding: 14px 0 12px;
+  border-bottom: 1px solid #d8d5ce;
+}
+
+.graph-kicker {
+  color: #8c8981;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  text-transform: lowercase;
+}
+
+.graph-title {
+  margin: 4px 0 0;
+  color: #282723;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.graph-summary {
+  display: -webkit-box;
+  max-width: 720px;
+  margin-top: 6px;
+  overflow: hidden;
+  color: #68665f;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.graph-section {
+  position: relative;
+  padding-top: 4px;
+}
+
+.graph-depth {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  color: #8c8981;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.graph-canvas {
+  position: relative;
+  height: clamp(320px, 60vh, 560px);
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.graph-canvas .float-tooltip-kap {
+  padding: 5px 9px;
+  color: #fff;
+  background: #34332f;
+  border-radius: 2px;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.graph-empty {
+  color: #68665f;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.search-status {
+  padding: 17px 0 0 36px;
+}
+
+.search-status[hidden] {
+  display: none;
+}
+
+.search-form.is-loading .search-icon {
+  animation: search-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.search-icon {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: #8c8981;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+input[type="search"] {
+  width: 100%;
+  padding: clamp(16px, 3vw, 22px) 0 clamp(16px, 3vw, 22px) 36px;
+  color: #34332f;
+  caret-color: #68665f;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #d8d5ce;
+  border-radius: 0;
+  outline: 0;
+  font: 400 clamp(1.12rem, 2vw, 1.34rem) / 1.4 Iowan Old Style, Baskerville,
+    "Times New Roman", serif;
+  letter-spacing: -0.012em;
+  transition:
+    border-color 300ms ease,
+    color 300ms ease;
+}
+
+input[type="search"]::placeholder {
+  color: #9b9891;
+  opacity: 1;
+}
+
+input[type="search"]:hover {
+  border-color: #aaa69d;
+}
+
+input[type="search"]:focus {
+  border-color: #68665f;
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.text-button.continue-button {
+  margin: 0 auto;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  animation: soften-in 1.4s 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 .entry {
-  width: min(100%, 760px);
+  display: grid;
+  place-items: center;
+  align-content: center;
   text-align: center;
+}
+
+.entry > * {
+  width: min(100%, 760px);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 h1 {
@@ -48,38 +392,42 @@ h1 {
   animation: soften-in 2.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-form {
-  margin-top: clamp(42px, 6vh, 64px);
+.ingestion-form {
+  margin-top: 0;
   animation: soften-in 1s 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .text-entry {
   position: relative;
+  display: grid;
 }
 
 .empty-prompt {
-  position: absolute;
-  top: 0;
-  left: 50%;
+  position: relative;
   z-index: 2;
-  display: inline-flex;
+  grid-area: 1 / 1;
+  display: flex;
+  width: 100%;
   align-items: center;
+  justify-content: center;
   color: #aaa7a0;
-  font-family: Inter, "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(1.08rem, 2vw, 1.28rem);
-  line-height: 1.65;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+  letter-spacing: -0.012em;
+  line-height: 1.3;
   pointer-events: none;
-  transform: translateX(-50%);
-  transition: opacity 240ms ease;
+  transform: translateY(0) scale(1);
+  transition:
+    color 420ms ease,
+    letter-spacing 520ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 240ms ease,
+    transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.empty-prompt::after {
-  content: "";
-  width: 1px;
-  height: 1.15em;
-  margin-left: 2px;
-  background: #68665f;
-  animation: caret-blink 1.05s steps(1, end) infinite;
+.text-entry:not(.has-text):hover .empty-prompt {
+  color: #77746d;
+  letter-spacing: 0.004em;
+  transform: translateY(-2px) scale(1.015);
 }
 
 .text-entry.has-text .empty-prompt {
@@ -116,6 +464,7 @@ form {
 
 textarea {
   display: block;
+  grid-area: 1 / 1;
   width: 100%;
   min-height: 2rem;
   padding: 0;
@@ -127,11 +476,11 @@ textarea {
   border: 0;
   border-radius: 0;
   outline: 0;
-  font-family: Inter, "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(1.08rem, 2vw, 1.28rem);
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: clamp(1.75rem, 4vw, 3rem);
   font-weight: 400;
   letter-spacing: -0.012em;
-  line-height: 1.65;
+  line-height: 1.3;
   text-align: center;
   scrollbar-color: #d8d5ce transparent;
   scrollbar-width: thin;
@@ -149,7 +498,7 @@ textarea:disabled {
   caret-color: #68665f;
 }
 
-button {
+.text-button {
   display: block;
   margin: 28px auto 0;
   padding: 0;
@@ -174,7 +523,7 @@ button {
     visibility 0s linear 520ms;
 }
 
-button.is-visible {
+.text-button.is-visible {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -182,7 +531,12 @@ button.is-visible {
   transition-delay: 0s;
 }
 
-button.is-loading::before {
+#submit-button:not(.is-visible) {
+  transition-duration: 900ms, 300ms, 900ms, 0s;
+  transition-delay: 0s, 0s, 0s, 900ms;
+}
+
+.text-button.is-loading::before {
   content: "";
   position: absolute;
   z-index: 1;
@@ -202,7 +556,7 @@ button.is-loading::before {
   animation: button-gloss 4.2s ease-in-out infinite;
 }
 
-button::after {
+.text-button::after {
   content: "";
   position: absolute;
   right: 0;
@@ -215,26 +569,26 @@ button::after {
   transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-button:hover::after,
-button:focus-visible::after {
+.text-button:hover::after,
+.text-button:focus-visible::after {
   transform: scaleX(1);
   transform-origin: left;
 }
 
-button:focus-visible {
+.text-button:focus-visible {
   outline: 0;
 }
 
-button:disabled {
+.text-button:disabled {
   cursor: wait;
   opacity: 0.45;
 }
 
-button.is-loading:disabled {
+.text-button.is-loading:disabled {
   opacity: 1;
 }
 
-button.is-loading::after {
+.text-button.is-loading::after {
   transform: scaleX(0);
 }
 
@@ -267,18 +621,6 @@ button.is-loading::after {
   }
 }
 
-@keyframes caret-blink {
-  0%,
-  48% {
-    opacity: 1;
-  }
-
-  49%,
-  100% {
-    opacity: 0;
-  }
-}
-
 @keyframes button-gloss {
   from {
     transform: translateX(-150%);
@@ -301,34 +643,169 @@ button.is-loading::after {
   }
 }
 
-@media (max-width: 520px) {
-  main {
-    padding-top: 48px;
+@keyframes result-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
   }
 
-  form {
-    margin-top: 36px;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
+@keyframes search-pulse {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* On wide screens the graph page fits the viewport and the node info floats over the graph's top left. */
+@media (min-width: 900px) {
+  .page-stack.is-graph-page .landing {
+    display: block;
+    height: 100vh;
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  .page-stack.is-graph-page .search-wrap {
+    height: 100%;
+  }
+
+  .page-stack.is-graph-page .search-wrap,
+  .graph-view,
+  .graph-body,
+  .graph-section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .graph-view,
+  .graph-body,
+  .graph-section,
+  .graph-canvas {
+    flex: 1 1 auto;
+  }
+
+  .graph-canvas {
+    height: auto;
+    min-height: 0;
+  }
+
+  .graph-view {
+    position: relative;
+    padding-top: 0;
+  }
+
+  /* The graph runs underneath the top bar, which fades out along its bottom edge. */
+  .graph-topbar {
+    --fade: 24px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 2;
+    padding-bottom: var(--fade);
+    background: rgba(255, 255, 255, 0.6);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent);
+  }
+
+  .graph-status {
+    padding-top: 48px;
+  }
+
+  .graph-body {
+    position: relative;
+  }
+
+  /* Centred so it isn't hidden behind the floating node info. */
+  .graph-empty {
+    margin: auto;
+  }
+
+  .graph-header {
+    position: absolute;
+    --fade: 28px;
+    top: 20px;
+    left: -32px;
+    z-index: 1;
+    width: clamp(290px, 26vw, 390px);
+    max-height: calc(100% - 20px);
+    padding: 28px 32px 32px;
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.6);
+    border-bottom: 0;
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    /* Fade the panel out over its padding so the text stays fully backed. */
+    -webkit-mask-image:
+      linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent),
+      linear-gradient(to bottom, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+    mask-image:
+      linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent),
+      linear-gradient(to bottom, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
+  }
+
+  .graph-summary {
+    display: block;
+    margin-top: 12px;
+  }
+
+  .graph-section {
+    min-width: 0;
+    padding-top: 0;
+  }
+
+  .graph-canvas {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .screen {
+    padding-top: 48px;
+    padding-bottom: 36px;
+  }
+
+}
+
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
   h1,
-  form {
+  .search-wrap,
+  .continue-button,
+  .ingestion-form {
     animation: none;
   }
 
-  .empty-prompt::after {
-    animation: none;
-  }
-
-  button.is-loading::before,
-  .status {
+  .text-button.is-loading::before,
+  .status,
+  .search-result,
+  .graph-view,
+  .search-form.is-loading .search-icon {
     animation: none;
   }
 
   textarea,
-  button,
-  button::after,
+  .empty-prompt,
+  .text-button,
+  .text-button::after,
+  .search-result-button,
   .text-entry::before,
   .text-entry::after {
     transition-duration: 0.01ms;
