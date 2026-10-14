@@ -81,6 +81,26 @@ run later with
 `GET /api/v1/ingestions/{run_id}`. Interactive API documentation is at
 `http://localhost:8000/docs`.
 
+Query canonical nodes with the same exact-then-fuzzy identity matcher used by
+ingestion. The node type is required because lexical matches are type-compatible;
+aliases and external IDs are optional additional identity signals:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/nodes/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "query": "Sara Chen",
+    "node_type": "person",
+    "aliases": ["Sarah"],
+    "limit": 5
+  }'
+```
+
+The response contains ranked candidates with their match kind (`external_id`,
+`identifier`, `normalized_title`, or `fuzzy`), score, and scoring reasons. The
+current prototype reads the active workspace graph directly and uses lexical
+similarity until the documented search projections are available.
+
 > **Temporary prototype identity:** Until authentication and workspace selection
 > are implemented, every request is assigned to the hardcoded workspace UUID
 > `00000000-0000-0000-0000-000000000002`. This value is not a real tenant ID and

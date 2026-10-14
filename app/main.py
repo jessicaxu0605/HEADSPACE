@@ -1,4 +1,4 @@
-"""Public HTTP API for source ingestion and run status."""
+"""Public HTTP API for source ingestion and canonical node queries."""
 
 from __future__ import annotations
 
@@ -24,8 +24,15 @@ from app.workflows.ingest import (
 from app.workflows.postgres_canonical_graph import PostgresCanonicalGraphResolverStore
 from app.workflows.resolve_proposed_subgraph import (
     CanonicalGraphResolverStore,
+    NodeMatchKind,
 )
-from app.workflows.types import IngestionRunRecord, MAX_LOAD_ALL_BYTES
+from app.workflows.types import (
+    IngestionRunRecord,
+    MAX_LOAD_ALL_BYTES,
+    NodeType,
+    ProposedExternalId,
+    ProposedNode,
+)
 
 
 SupportedApiSourceType = Literal["manual_entry", "email", "calendar_event"]
@@ -83,6 +90,72 @@ class IngestionRunResponse(BaseModel):
         )
 
 
+class NodeExternalIdRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(min_length=1, max_length=100)
+    external_id: str = Field(min_length=1, max_length=500)
+
+    @field_validator("provider", "external_id")
+    @classmethod
+    def validate_non_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must not be blank")
+        return stripped
+
+
+class NodeQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=500)
+    node_type: NodeType
+    aliases: list[str] = Field(default_factory=list, max_length=20)
+    external_ids: list[NodeExternalIdRequest] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+    limit: int = Field(default=10, ge=1, le=50)
+
+    @field_validator("query")
+    @classmethod
+    def validate_query(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("query must not be blank")
+        return stripped
+
+    @field_validator("aliases")
+    @classmethod
+    def validate_aliases(cls, values: list[str]) -> list[str]:
+        aliases: list[str] = []
+        for value in values:
+            stripped = value.strip()
+            if not stripped:
+                raise ValueError("aliases must not contain blank values")
+            if len(stripped) > 500:
+                raise ValueError("aliases must be at most 500 characters")
+            if stripped not in aliases:
+                aliases.append(stripped)
+        return aliases
+
+
+class NodeQueryMatchResponse(BaseModel):
+    node_id: UUID
+    node_type: str
+    title: str
+    identifiers: list[str]
+    match_kind: NodeMatchKind
+    match_score: float
+    reasons: list[str]
+
+
+class NodeQueryResponse(BaseModel):
+    query: str
+    node_type: NodeType
+    matches: list[NodeQueryMatchResponse]
+
+
 @lru_cache(maxsize=1)
 def get_extraction_llm() -> GroqChunkExtractionLLM:
     return GroqChunkExtractionLLM()
@@ -124,11 +197,11 @@ def _print_ingestion_result(run: IngestionRunRecord) -> None:
 
 
 app = FastAPI(
-    title="Headspace Ingestion API",
+    title="Headspace API",
     version="0.1.0",
     description=(
         "Persists source content, extracts a chunk-aggregated proposed graph, "
-        "and atomically applies canonical graph changes."
+        "atomically applies canonical graph changes, and queries canonical nodes."
     ),
 )
 app.add_middleware(
@@ -143,6 +216,52 @@ app.add_middleware(
 @app.get("/health", tags=["system"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post(
+    "/api/v1/nodes/query",
+    response_model=NodeQueryResponse,
+    tags=["nodes"],
+)
+async def query_node(
+    request: NodeQueryRequest,
+    resolver_store: CanonicalGraphResolverStore = Depends(get_resolver_store),
+) -> NodeQueryResponse:
+    """Return canonical nodes ranked by the ingestion identity matcher."""
+
+    # TEMPORARY: replace with the authenticated request's workspace ID before
+    # this endpoint is used in a multi-user or production deployment.
+    workspace_id = ensure_temporary_prototype_workspace()
+    names = [request.query, *request.aliases]
+    candidates = await resolver_store.find_node_candidates(
+        workspace_id=workspace_id,
+        proposed_node=ProposedNode(
+            proposed_node_id="node-query",
+            node_type=request.node_type,
+            names=names,
+            primary_reference_name=request.query,
+            external_ids=[
+                ProposedExternalId(item.provider, item.external_id)
+                for item in request.external_ids
+            ],
+        ),
+    )
+    return NodeQueryResponse(
+        query=request.query,
+        node_type=request.node_type,
+        matches=[
+            NodeQueryMatchResponse(
+                node_id=candidate.node.node_id,
+                node_type=candidate.node.node_type,
+                title=candidate.node.title,
+                identifiers=candidate.node.identifiers,
+                match_kind=candidate.match_kind,
+                match_score=candidate.match_score,
+                reasons=candidate.reasons,
+            )
+            for candidate in candidates[: request.limit]
+        ],
+    )
 
 
 @app.post(
