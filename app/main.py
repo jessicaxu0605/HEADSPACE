@@ -23,7 +23,7 @@ from app.db import (
     open_async_pool,
 )
 from app.graph.queries.edge_detail import EdgeDetailStore, EdgeStatus
-from app.graph.queries.node_neighborhood import NodeNeighborhoodStore
+from app.graph.queries.node_neighborhood import NeighborhoodNode, NodeNeighborhoodStore
 from app.graph.queries.run_graph import (
     RunGraphChangeKind,
     RunGraphStore,
@@ -36,13 +36,18 @@ from app.persistence.postgres.canonical_graph import (
 from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
 from app.persistence.postgres.node_neighborhood import PostgresNodeNeighborhoodStore
 from app.persistence.postgres.run_graph import PostgresRunGraphStore
+from app.workflows.ingest.enrich_type_specific import TypeSpecificEnrichmentLLM
 from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
 from app.workflows.ingest.groq_chunk_extraction import GroqChunkExtractionLLM
+from app.workflows.ingest.groq_type_specific_enrichment import (
+    GroqTypeSpecificEnrichmentLLM,
+)
 from app.workflows.ingest.resolve_proposed_subgraph import (
     CanonicalGraphResolverStore,
     NodeCandidateSearchStore,
     NodeMatchKind,
 )
+from app.workflows.ingest.type_specific import displayable_type_specific
 from app.workflows.ingest.types import (
     IngestionRunRecord,
     MAX_LOAD_ALL_BYTES,
@@ -175,6 +180,20 @@ class NodeQueryResponse(BaseModel):
     matches: list[NodeQueryMatchResponse]
 
 
+class NodeDetailResponse(BaseModel):
+    """A type-specific field worth showing on the node page."""
+
+    name: str
+    label: str
+    kind: str
+    value: Any
+
+
+class NodeExternalIdResponse(BaseModel):
+    provider: str
+    external_id: str
+
+
 class NeighborhoodNodeResponse(BaseModel):
     node_id: UUID
     node_type: str
@@ -183,6 +202,43 @@ class NeighborhoodNodeResponse(BaseModel):
     importance: float
     confidence: float
     distance: int
+    # Identifiers other than the title and the external IDs below.
+    aliases: list[str]
+    external_ids: list[NodeExternalIdResponse]
+    details: list[NodeDetailResponse]
+
+    @classmethod
+    def from_node(cls, node: NeighborhoodNode) -> NeighborhoodNodeResponse:
+        fields = asdict(node)
+        type_specific = fields.pop("type_specific")
+        identifiers = fields.pop("identifiers")
+        external_ids = fields.pop("external_ids")
+        # Emails promoted out of titles are kept as both identifier and
+        # external ID; show them once, as the external ID.
+        hidden = {node.title.casefold()} | {
+            value.casefold() for _, value in external_ids
+        }
+        aliases: list[str] = []
+        for identifier in identifiers:
+            if identifier.casefold() not in hidden:
+                aliases.append(identifier)
+                hidden.add(identifier.casefold())
+        return cls(
+            **fields,
+            aliases=aliases,
+            external_ids=[
+                NodeExternalIdResponse(provider=provider, external_id=external_id)
+                for provider, external_id in external_ids
+            ],
+            details=[
+                NodeDetailResponse(
+                    name=spec.name, label=spec.label, kind=spec.kind, value=value
+                )
+                for spec, value in displayable_type_specific(
+                    node.node_type, type_specific
+                )
+            ],
+        )
 
 
 class NeighborhoodEdgeResponse(BaseModel):
@@ -296,6 +352,13 @@ def get_extraction_llm() -> GroqChunkExtractionLLM:
     return GroqChunkExtractionLLM(
         relation_definitions=load_active_relation_types()
     )
+
+
+@lru_cache(maxsize=1)
+def get_enrichment_llm() -> GroqTypeSpecificEnrichmentLLM:
+    """Return the second-pass type-specific field extractor."""
+
+    return GroqTypeSpecificEnrichmentLLM()
 
 
 @lru_cache(maxsize=1)
@@ -451,7 +514,7 @@ async def read_node_neighborhood(
     return NodeNeighborhoodResponse(
         start_node_id=neighborhood.start_node_id,
         depth=neighborhood.depth,
-        nodes=[NeighborhoodNodeResponse(**asdict(node)) for node in neighborhood.nodes],
+        nodes=[NeighborhoodNodeResponse.from_node(node) for node in neighborhood.nodes],
         edges=[NeighborhoodEdgeResponse(**asdict(edge)) for edge in neighborhood.edges],
     )
 
@@ -490,6 +553,7 @@ async def create_ingestion(
     request: IngestionRequest,
     response: Response,
     llm: ChunkExtractionLLM = Depends(get_extraction_llm),
+    enrichment_llm: TypeSpecificEnrichmentLLM = Depends(get_enrichment_llm),
     resolver_store: CanonicalGraphResolverStore = Depends(get_resolver_store),
 ) -> IngestionRunResponse | JSONResponse:
     """Extract and resolve one source in the default development workspace."""
@@ -503,6 +567,7 @@ async def create_ingestion(
             source_metadata=request.source_metadata,
             client_request_id=request.client_request_id,
             llm=llm,
+            enrichment_llm=enrichment_llm,
             resolver_store=resolver_store,
         )
     except ValueError as exc:

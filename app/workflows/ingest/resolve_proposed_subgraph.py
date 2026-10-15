@@ -21,6 +21,12 @@ from app.workflows.ingest.relation_types import (
     canonicalize_relation_type,
     relation_ancestors,
 )
+from app.workflows.ingest.type_specific import (
+    fill_type_specific,
+    is_email as _is_email,
+    type_specific_identity_key,
+    with_type_specific_identity,
+)
 from app.workflows.ingest.types import (
     JsonObject,
     NodeType,
@@ -35,6 +41,7 @@ from app.workflows.ingest.types import (
 NodeMatchKind: TypeAlias = Literal[
     "external_id",
     "identifier",
+    "type_specific",
     "normalized_title",
     "fuzzy",
 ]
@@ -60,6 +67,8 @@ class CanonicalNode:
     title: str
     identifiers: list[str] = field(default_factory=list)
     external_ids: list[ProposedExternalId] = field(default_factory=list)
+    type_specific: JsonObject | None = None
+    summary: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,6 +293,23 @@ class SimpleCanonicalGraphResolverStore:
         if canonical_node.node_type != proposed_node.node_type:
             return None
 
+        proposed_key = type_specific_identity_key(
+            proposed_node.node_type, proposed_node.type_specific
+        )
+        canonical_key = type_specific_identity_key(
+            canonical_node.node_type, canonical_node.type_specific
+        )
+        if proposed_key is not None and canonical_key is not None:
+            if proposed_key != canonical_key:
+                # Different dates or places, however similar their names.
+                return None
+            return NodeCandidate(
+                canonical_node,
+                "type_specific",
+                0.99,
+                [f"matching {canonical_node.node_type} identity {canonical_key!r}"],
+            )
+
         proposed_names = {
             _normalize(name)
             for name in [
@@ -364,6 +390,7 @@ class ResolveRepairItem:
         "possible_duplicate",
         "unresolved_edge_endpoint",
         "conflicting_exclusive_fact",
+        "conflicting_type_specific",
         "unsupported_relation_type",
         "invalid_relation_endpoints",
     ]
@@ -426,12 +453,53 @@ class MergeCanonicalNodes:
     kind: Literal["merge_nodes"] = "merge_nodes"
 
 
+@dataclass(frozen=True, slots=True)
+class FillCanonicalNodeTypeSpecific:
+    """Add type-specific fields the canonical node does not have yet.
+
+    Persistence keeps any value already on the locked row, so a field set by a
+    concurrent run is not overwritten.
+    """
+
+    node_id: UUID
+    type_specific: JsonObject
+    kind: Literal["fill_type_specific"] = "fill_type_specific"
+
+
+@dataclass(frozen=True, slots=True)
+class FillCanonicalNodeSummary:
+    """Set a summary on a canonical node that has none.
+
+    Persistence keeps any summary already on the locked row.
+    """
+
+    node_id: UUID
+    summary: str
+    kind: Literal["fill_summary"] = "fill_summary"
+
+
+@dataclass(frozen=True, slots=True)
+class QueueCanonicalNodeSummaryRefresh:
+    """Queue a different incoming summary to be merged into the node's summary.
+
+    Merging needs an LLM, so it runs in the summary refresh worker rather than
+    during ingestion.
+    """
+
+    node_id: UUID
+    incoming_summary: str
+    kind: Literal["queue_summary_refresh"] = "queue_summary_refresh"
+
+
 NodePlanAction: TypeAlias = (
     CreateCanonicalNode
     | CreateNodeIdentifier
     | CreateNodeExternalId
     | UpdateCanonicalNodeTitle
     | MergeCanonicalNodes
+    | FillCanonicalNodeTypeSpecific
+    | FillCanonicalNodeSummary
+    | QueueCanonicalNodeSummaryRefresh
 )
 
 
@@ -553,7 +621,10 @@ async def resolve_proposed_subgraph(
     repair_items: list[ResolveRepairItem] = []
     bound_nodes: dict[str, CanonicalNode] = {}
 
-    proposed_nodes = [_with_email_identity(node) for node in proposed_graph.nodes]
+    proposed_nodes = [
+        with_type_specific_identity(_with_email_identity(node))
+        for node in proposed_graph.nodes
+    ]
     candidates_by_node: dict[str, list[NodeCandidate]] = {}
     decisions_by_node: dict[
         str, tuple[Literal["resolve", "create", "ambiguous"], NodeCandidate | None]
@@ -657,6 +728,47 @@ async def resolve_proposed_subgraph(
                             _normalized_email(duplicate.node.title),
                         )
                     )
+            if proposed_node.summary and not canonical_node.summary:
+                node_actions.append(
+                    FillCanonicalNodeSummary(
+                        canonical_node.node_id, proposed_node.summary
+                    )
+                )
+            elif proposed_node.summary and _normalize(
+                proposed_node.summary
+            ) != _normalize(canonical_node.summary or ""):
+                node_actions.append(
+                    QueueCanonicalNodeSummaryRefresh(
+                        canonical_node.node_id, proposed_node.summary
+                    )
+                )
+            type_specific_patch, conflicts = fill_type_specific(
+                canonical_node.type_specific, proposed_node.type_specific
+            )
+            if type_specific_patch:
+                node_actions.append(
+                    FillCanonicalNodeTypeSpecific(
+                        canonical_node.node_id, type_specific_patch
+                    )
+                )
+            if conflicts:
+                repair_items.append(
+                    ResolveRepairItem(
+                        item_type="conflicting_type_specific",
+                        source_id=source_id,
+                        severity="low",
+                        message=(
+                            f"Kept existing {', '.join(sorted(conflicts))} for "
+                            f"{canonical_node.title!r}; this source states "
+                            "different values."
+                        ),
+                        proposed_node_id=proposed_node.proposed_node_id,
+                        details={
+                            "node_id": str(canonical_node.node_id),
+                            "fields": conflicts,
+                        },
+                    )
+                )
         else:
             canonical_node = CanonicalNode(
                 node_id=uuid_factory(),
@@ -734,6 +846,8 @@ async def resolve_proposed_subgraph(
                 title=preferred_title,
                 identifiers=[*canonical_node.identifiers, selected.node.title],
                 external_ids=promoted_external_ids,
+                type_specific=canonical_node.type_specific,
+                summary=canonical_node.summary,
             )
 
         bound_nodes[proposed_node.proposed_node_id] = canonical_node
@@ -1179,17 +1293,9 @@ def _choose_node_candidate(
     return "resolve", ordered[0]
 
 
-_EMAIL_PATTERN = re.compile(
-    r"^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}$",
-    re.IGNORECASE,
-)
 _LEET_TRANSLATION = str.maketrans(
     {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t"}
 )
-
-
-def _is_email(value: str) -> bool:
-    return _EMAIL_PATTERN.fullmatch(value.strip()) is not None
 
 
 def _normalized_email(value: str) -> str:

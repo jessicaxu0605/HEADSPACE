@@ -313,6 +313,33 @@ class ProposedSubgraphExtractionResult:
 
 
 @dataclass(frozen=True, slots=True)
+class TypeSpecificEnrichmentNode:
+    proposed_node_id: str
+    node_type: NodeType
+    names: list[str]
+    summary: str | None = None
+    type_specific: JsonObject | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TypeSpecificEnrichmentInput:
+    current_chunk: SourceChunk
+    source_context: ExtractionSourceContext
+    nodes: list[TypeSpecificEnrichmentNode]
+    # Date the source was ingested, for resolving relative dates ("next Friday").
+    reference_date: str
+    temporal_anchor: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TypeSpecificPatch:
+    proposed_node_id: str
+    values: JsonObject
+    # Replaces the node's summary; already merged with it by the model.
+    summary: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AddNodeAction:
     node: ProposedNode
     type: Literal["add_node"] = "add_node"

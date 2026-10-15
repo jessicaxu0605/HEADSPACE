@@ -28,8 +28,6 @@ Prototype SQL is reference material, not part of the runtime application. Once a
 
 The MVP API accepts manual entries, email text/JSON, and calendar event text/JSON. It stores the complete source in a private S3 bucket, persists the source and ingestion run in PostgreSQL, calls Groq for chunk extraction, resolves against the current workspace graph, and applies the canonical graph transaction atomically.
 
-Add the existing Neon connection string and Groq key to `.env.local`:
-
 ```bash
 cp .env.example .env.local
 venv/bin/python -m app.migrate
@@ -97,4 +95,28 @@ brew services start ollama
 ollama pull nomic-embed-text
 ```
 
-Provider URL, model, dimensions, and prefixes can be changed with the`OLLAMA_BASE_URL` and `EMBEDDING_*` settings in `.env.example`. Model and dimension must be changed together. The engine is ready for the projection worker; materializing the projection tables and consuming `projection_rebuild_queue` are separate follow-up steps.
+Provider URL, model, dimensions, and prefixes can be changed with the`OLLAMA_BASE_URL` and `EMBEDDING_*` settings in `.env.example`. Model and dimension must be changed together; the `embedding` columns of `node_search_projection` and `edge_search_projection` are `vector(768)`, so a different width also needs a migration.
+
+### Search projections
+
+`app/search/node_projection.py` builds two projections per canonical node, as described in Design V1 "Build projections": `identity` (name, aliases, node type, abstracted external-ID providers, stable type-specific fields, and the strongest `is_a`/`part_of`/`located_in` edges) and `profile` (summary, changeable type-specific facts, and the highest strength-times-confidence edges as sentences). Each is stored in `node_search_projection` with its search text, embedding text, vector, and a source hash so unchanged text is not re-embedded.
+
+`app/search/edge_projection.py` builds one projection per canonical edge: the edge as a sentence using the tense-appropriate catalog connector, the relation type and endpoint types with the first sentence of the catalog description (skipped for `related_to`), the edge `details`, its validity window, and up to three evidence quotes ranked by confidence with annotated mentions replaced by node names. It is stored in `edge_search_projection`.
+
+Ingestion queues affected nodes and edges in `projection_rebuild_queue`. To process the queue:
+
+```bash
+python -m app.search.rebuild_projections
+```
+
+Vector search queries are not built yet.
+
+### Node summaries
+
+Ingestion sets a node's summary only when it has none. When a resolved node already has a different summary, the incoming one is queued in `node_summary_refresh_queue` (one pending row per node, so several sources are merged together). To merge queued summaries with Groq:
+
+```bash
+python -m app.workflows.summaries.refresh_summaries
+```
+
+Updated nodes are queued for a projection rebuild, so run `rebuild_projections` afterwards.

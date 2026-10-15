@@ -131,6 +131,69 @@ class NodeNeighborhoodApiTests(unittest.TestCase):
         )
         self.assertEqual(response.json()["edges"][0]["edge_id"], str(edge_id))
 
+    def test_returns_only_displayable_type_specific_details(self) -> None:
+        task, day = uuid4(), uuid4()
+        graph_store = SimpleNodeNeighborhoodStore(
+            nodes=[
+                NeighborhoodNode(
+                    task,
+                    "task",
+                    "Finish pitch deck",
+                    type_specific={"task_status": "todo", "email": "x@example.com"},
+                ),
+                NeighborhoodNode(
+                    day,
+                    "date",
+                    "June 1935",
+                    type_specific={"date_value": "1935-06-01", "precision": "month"},
+                ),
+            ],
+            edges=[NeighborhoodEdge(uuid4(), task, day, "related_to", 0.5, 0.5)],
+        )
+        app.dependency_overrides[get_neighborhood_store] = lambda: graph_store
+
+        response = TestClient(app).get(f"/api/v1/nodes/{task}/graph")
+
+        self.assertEqual(response.status_code, 200)
+        task_node, date_node = response.json()["nodes"]
+        self.assertEqual(
+            task_node["details"],
+            [{"name": "task_status", "label": "status", "kind": "enum", "value": "todo"}],
+        )
+        self.assertNotIn("type_specific", task_node)
+        self.assertEqual(date_node["details"], [])
+
+    def test_returns_aliases_without_title_or_external_id_duplicates(self) -> None:
+        start = uuid4()
+        graph_store = SimpleNodeNeighborhoodStore(
+            nodes=[
+                NeighborhoodNode(
+                    start,
+                    "person",
+                    "Sarah Chen",
+                    identifiers=["sarah chen", "Sarah", "sarahc@example.com", "Sar"],
+                    external_ids=[
+                        ("email", "sarahc@example.com"),
+                        ("instagram", "sarahc"),
+                    ],
+                )
+            ],
+        )
+        app.dependency_overrides[get_neighborhood_store] = lambda: graph_store
+
+        response = TestClient(app).get(f"/api/v1/nodes/{start}/graph")
+
+        self.assertEqual(response.status_code, 200)
+        [node] = response.json()["nodes"]
+        self.assertEqual(node["aliases"], ["Sarah", "Sar"])
+        self.assertEqual(
+            node["external_ids"],
+            [
+                {"provider": "email", "external_id": "sarahc@example.com"},
+                {"provider": "instagram", "external_id": "sarahc"},
+            ],
+        )
+
     def test_returns_404_and_validates_depth(self) -> None:
         app.dependency_overrides[get_neighborhood_store] = (
             lambda: FakeNeighborhoodStore(None)

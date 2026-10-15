@@ -13,6 +13,10 @@ from psycopg.types.json import Jsonb
 from app.db import get_connection
 from app.serialization import to_jsonable
 from app.storage import write_storage_object
+from app.workflows.ingest.enrich_type_specific import (
+    TypeSpecificEnrichmentLLM,
+    enrich_type_specific,
+)
 from app.workflows.ingest.extract_proposed_subgraph import (
     ChunkExtractionLLM,
     extract_proposed_subgraph,
@@ -24,7 +28,10 @@ from app.workflows.ingest.resolve_proposed_subgraph import (
     CreateCanonicalNode,
     CreateNodeExternalId,
     CreateNodeIdentifier,
+    FillCanonicalNodeSummary,
+    FillCanonicalNodeTypeSpecific,
     MergeCanonicalNodes,
+    QueueCanonicalNodeSummaryRefresh,
     ResolutionTransactionPlan,
     UpdateCanonicalNodeTitle,
     UpsertCanonicalEdge,
@@ -33,6 +40,7 @@ from app.workflows.ingest.resolve_proposed_subgraph import (
     resolve_proposed_subgraph,
 )
 from app.workflows.ingest.types import (
+    ExtractionRepairItem,
     IngestionRunRecord,
     MemorySourceInput,
     MemorySourceRecord,
@@ -225,6 +233,7 @@ async def ingest_content(
     source_metadata: dict[str, Any],
     client_request_id: str,
     llm: ChunkExtractionLLM,
+    enrichment_llm: TypeSpecificEnrichmentLLM | None = None,
     resolver_store: CanonicalGraphResolverStore | None = None,
 ) -> IngestionRunRecord:
     """Persist a source, extract its graph, and atomically apply graph changes."""
@@ -260,6 +269,10 @@ async def ingest_content(
         extraction_result: ProposedSubgraphExtractionResult = (
             await extract_proposed_subgraph(prepare_source(source), llm)
         )
+        if enrichment_llm is not None:
+            await _enrich_type_specific_or_record(
+                source, extraction_result, enrichment_llm
+            )
         failure_phase = "resolve"
         transaction_plan = await resolve_proposed_subgraph(
             workspace_id=workspace_id,
@@ -312,6 +325,33 @@ async def ingest_content(
             result=result,
         )
         raise IngestionExecutionError(failed_run, exc) from exc
+
+
+async def _enrich_type_specific_or_record(
+    source: MemorySourceRecord,
+    extraction_result: ProposedSubgraphExtractionResult,
+    enrichment_llm: TypeSpecificEnrichmentLLM,
+) -> None:
+    """Fill type-specific fields; a failure leaves them unfilled, not the run."""
+
+    try:
+        await enrich_type_specific(
+            prepare_source(source),
+            extraction_result.proposed_graph,
+            enrichment_llm,
+            extraction_context=extraction_result.updated_extraction_context,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Type-specific enrichment failed for source %s", source.id, exc_info=True
+        )
+        extraction_result.repair_items.append(
+            ExtractionRepairItem(
+                message=f"Type-specific enrichment failed: {exc}",
+                item_type="type_specific_enrichment_failed",
+                details={"severity": "low", "error_type": type(exc).__name__},
+            )
+        )
 
 
 class StaleTransactionPlanError(RuntimeError):
@@ -423,6 +463,30 @@ def _enqueue_projection_rebuild(
     )
 
 
+def _enqueue_summary_refresh(
+    conn: Any,
+    *,
+    workspace_id: UUID,
+    node_id: UUID,
+    incoming_summaries: list[str],
+) -> None:
+    """Append summaries to the node's pending refresh, creating it if needed."""
+
+    conn.execute(
+        """
+        INSERT INTO node_summary_refresh_queue (
+            workspace_id, node_id, incoming_summaries
+        )
+        VALUES (%s, %s, %s)
+        ON CONFLICT (workspace_id, node_id) WHERE status = 'pending'
+        DO UPDATE SET incoming_summaries =
+            node_summary_refresh_queue.incoming_summaries
+            || EXCLUDED.incoming_summaries
+        """,
+        (workspace_id, node_id, incoming_summaries),
+    )
+
+
 def _apply_node_actions(
     conn: Any,
     plan: ResolutionTransactionPlan,
@@ -531,6 +595,35 @@ def _apply_node_actions(
                 WHERE workspace_id = %s AND id = %s
                 """,
                 (action.title, plan.workspace_id, node_id),
+            )
+        elif isinstance(action, FillCanonicalNodeSummary):
+            conn.execute(
+                """
+                UPDATE memory_node
+                SET summary = %s, updated_at = now()
+                WHERE workspace_id = %s
+                  AND id = %s
+                  AND (summary IS NULL OR btrim(summary) = '')
+                """,
+                (action.summary, plan.workspace_id, node_id),
+            )
+        elif isinstance(action, QueueCanonicalNodeSummaryRefresh):
+            _enqueue_summary_refresh(
+                conn,
+                workspace_id=plan.workspace_id,
+                node_id=node_id,
+                incoming_summaries=[action.incoming_summary],
+            )
+        elif isinstance(action, FillCanonicalNodeTypeSpecific):
+            # Right side wins in jsonb ||, so existing values are kept.
+            conn.execute(
+                """
+                UPDATE memory_node
+                SET type_specific = %s || COALESCE(type_specific, '{}'::jsonb),
+                    updated_at = now()
+                WHERE workspace_id = %s AND id = %s
+                """,
+                (Jsonb(action.type_specific), plan.workspace_id, node_id),
             )
         elif isinstance(action, CreateNodeIdentifier):
             conn.execute(
@@ -797,6 +890,64 @@ def _merge_canonical_nodes(
         )
         changes.archived_edges.add(edge["id"])
 
+    # Keep the duplicate's summary: use it when the surviving node has none,
+    # otherwise queue it to be merged, along with any refresh still pending.
+    summaries = conn.execute(
+        """
+        SELECT source.summary AS source_summary, target.summary AS target_summary
+        FROM memory_node AS source, memory_node AS target
+        WHERE source.workspace_id = %s AND source.id = %s
+          AND target.workspace_id = source.workspace_id AND target.id = %s
+        """,
+        (workspace_id, from_node_id, into_node_id),
+    ).fetchone()
+    pending_summaries = [
+        summary
+        for row in conn.execute(
+            """
+            DELETE FROM node_summary_refresh_queue
+            WHERE workspace_id = %s AND node_id = %s AND status = 'pending'
+            RETURNING incoming_summaries
+            """,
+            (workspace_id, from_node_id),
+        ).fetchall()
+        for summary in row["incoming_summaries"]
+    ]
+    source_summary = (summaries["source_summary"] or "").strip()
+    if source_summary and not (summaries["target_summary"] or "").strip():
+        conn.execute(
+            """
+            UPDATE memory_node SET summary = %s, updated_at = now()
+            WHERE workspace_id = %s AND id = %s
+            """,
+            (source_summary, workspace_id, into_node_id),
+        )
+    elif source_summary and source_summary != summaries["target_summary"].strip():
+        pending_summaries.insert(0, source_summary)
+    if pending_summaries:
+        _enqueue_summary_refresh(
+            conn,
+            workspace_id=workspace_id,
+            node_id=into_node_id,
+            incoming_summaries=pending_summaries,
+        )
+
+    # Fill the surviving node's missing type-specific fields from the duplicate.
+    conn.execute(
+        """
+        UPDATE memory_node AS target
+        SET type_specific = source.type_specific
+              || COALESCE(target.type_specific, '{}'::jsonb),
+            updated_at = now()
+        FROM memory_node AS source
+        WHERE target.workspace_id = %s
+          AND target.id = %s
+          AND source.workspace_id = target.workspace_id
+          AND source.id = %s
+          AND source.type_specific IS NOT NULL
+        """,
+        (workspace_id, into_node_id, from_node_id),
+    )
     conn.execute(
         """
         UPDATE memory_node

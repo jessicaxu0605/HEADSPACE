@@ -289,6 +289,8 @@ class PostgresCanonicalGraphResolverStore:
                     n.id AS node_id,
                     n.node_type,
                     n.name AS title,
+                    n.type_specific,
+                    n.summary,
                     i.identifier_text,
                     e.provider,
                     e.external_id
@@ -322,6 +324,8 @@ class PostgresCanonicalGraphResolverStore:
                     title=row["title"],
                     identifiers=[],
                     external_ids=[],
+                    type_specific=row["type_specific"],
+                    summary=row["summary"],
                 )
                 identifier_sets[node_id] = set()
                 external_id_sets[node_id] = set()
@@ -342,6 +346,8 @@ class PostgresCanonicalGraphResolverStore:
                         ProposedExternalId(provider, external_id)
                         for provider, external_id in sorted(external_id_sets[node_id])
                     ],
+                    type_specific=node.type_specific,
+                    summary=node.summary,
                 )
             )
         scorer = SimpleCanonicalGraphResolverStore(

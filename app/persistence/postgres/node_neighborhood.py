@@ -75,13 +75,35 @@ class PostgresNodeNeighborhoodStore:
                         n.node_type,
                         n.name AS title,
                         n.summary,
+                        n.type_specific,
                         n.importance,
                         n.confidence,
-                        d.distance
+                        d.distance,
+                        COALESCE(i.identifiers, ARRAY[]::text[]) AS identifiers,
+                        COALESCE(x.external_ids, '[]'::jsonb) AS external_ids
                     FROM distances AS d
                     JOIN memory_node AS n
                       ON n.workspace_id = %(workspace_id)s
                      AND n.id = d.node_id
+                    LEFT JOIN LATERAL (
+                        SELECT array_agg(
+                            DISTINCT ni.identifier_text ORDER BY ni.identifier_text
+                        ) AS identifiers
+                        FROM node_identifier AS ni
+                        WHERE ni.workspace_id = n.workspace_id
+                          AND ni.node_id = n.id
+                          AND ni.deleted_at IS NULL
+                    ) AS i ON true
+                    LEFT JOIN LATERAL (
+                        SELECT jsonb_agg(
+                            jsonb_build_array(ne.provider, ne.external_id)
+                            ORDER BY ne.provider, ne.external_id
+                        ) AS external_ids
+                        FROM node_external_id AS ne
+                        WHERE ne.workspace_id = n.workspace_id
+                          AND ne.node_id = n.id
+                          AND ne.deleted_at IS NULL
+                    ) AS x ON true
                 ),
                 neighborhood_edges AS (
                     SELECT
@@ -111,9 +133,12 @@ class PostgresNodeNeighborhoodStore:
                     n.node_type,
                     n.title,
                     n.summary,
+                    n.type_specific,
                     n.importance,
                     n.confidence,
                     n.distance,
+                    n.identifiers,
+                    n.external_ids,
                     NULL::uuid AS edge_id,
                     NULL::uuid AS from_node_id,
                     NULL::uuid AS to_node_id,
@@ -132,9 +157,12 @@ class PostgresNodeNeighborhoodStore:
                     NULL::text,
                     NULL::text,
                     NULL::text,
+                    NULL::jsonb,
                     NULL::double precision,
                     e.confidence,
                     NULL::integer,
+                    NULL::text[],
+                    NULL::jsonb,
                     e.edge_id,
                     e.from_node_id,
                     e.to_node_id,
@@ -170,6 +198,12 @@ class PostgresNodeNeighborhoodStore:
                 importance=row["importance"],
                 confidence=row["confidence"],
                 distance=row["distance"],
+                type_specific=row["type_specific"],
+                identifiers=row["identifiers"],
+                external_ids=[
+                    (provider, external_id)
+                    for provider, external_id in row["external_ids"]
+                ],
             )
             for row in rows
             if row["record_kind"] == "node"

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 from uuid import UUID
 
 
@@ -17,6 +17,10 @@ class NeighborhoodNode:
     importance: float = 0.5
     confidence: float = 0.5
     distance: int = 0
+    type_specific: dict[str, Any] | None = None
+    identifiers: list[str] = field(default_factory=list)
+    # (provider, external_id) pairs such as ("email", "sarah@example.com").
+    external_ids: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +117,9 @@ class SimpleNodeNeighborhoodStore:
                 importance=node.importance,
                 confidence=node.confidence,
                 distance=distances[node.node_id],
+                type_specific=node.type_specific,
+                identifiers=node.identifiers,
+                external_ids=node.external_ids,
             )
             for node in nodes_by_id.values()
             if node.node_id in included_ids
