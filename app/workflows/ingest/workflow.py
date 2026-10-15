@@ -361,11 +361,12 @@ class StaleTransactionPlanError(RuntimeError):
 def _postgres_resolver_store() -> CanonicalGraphResolverStore:
     # Keep the resolution policy module persistence-agnostic while making live
     # PostgreSQL reads the default for production ingestion.
+    from app.embeddings import OllamaEmbeddingEngine
     from app.persistence.postgres.canonical_graph import (
         PostgresCanonicalGraphResolverStore,
     )
 
-    return PostgresCanonicalGraphResolverStore()
+    return PostgresCanonicalGraphResolverStore(embedder=OllamaEmbeddingEngine())
 
 
 @dataclass

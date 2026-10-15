@@ -15,7 +15,13 @@ export type IngestionRun = {
 
 export type NodeQueryMatch = MemoryNodeReference & {
   identifiers: string[];
-  match_kind: "external_id" | "identifier" | "normalized_title" | "fuzzy";
+  match_kind:
+    | "external_id"
+    | "identifier"
+    | "normalized_title"
+    | "fuzzy"
+    | "identity"
+    | "profile";
   match_score: number;
   reasons: string[];
 };

@@ -5,42 +5,43 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-from app.main import app, get_resolver_store
-from app.workflows.ingest.resolve_proposed_subgraph import CanonicalNode, NodeCandidate
+from app.main import app, get_node_search_store
+from app.search.node_search import NodeSearchResult
 
 
-class FakeResolverStore:
-    def __init__(self, candidates: list[NodeCandidate]) -> None:
-        self.candidates = candidates
+def _result(node_type, title, match_kind, score, reasons, identifiers=()):
+    return NodeSearchResult(
+        uuid4(), node_type, title, match_kind, score, list(identifiers), reasons
+    )
+
+
+class FakeSearchStore:
+    def __init__(self, results: list[NodeSearchResult]) -> None:
+        self.results = results
         self.calls = []
 
-    async def search_node_candidates(self, **kwargs):
+    async def search_nodes(self, **kwargs):
         self.calls.append(kwargs)
-        return self.candidates[: kwargs["limit"]]
+        return self.results[: kwargs["limit"]]
 
 
 class NodeQueryApiTests(unittest.TestCase):
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
-    def test_returns_ranked_limited_candidates_from_identity_matcher(self) -> None:
+    def test_returns_ranked_limited_results_from_search_store(self) -> None:
         expected_workspace_id = UUID("00000000-0000-0000-0000-000000000002")
-        sarah = CanonicalNode(
-            uuid4(),
-            "person",
-            "Sarah Chen",
-            identifiers=["Sarah"],
+        sarah = _result(
+            "person", "Sarah Chen", "identifier", 0.99, ["exact alias"], ["Sarah"]
         )
-        sara = CanonicalNode(uuid4(), "person", "Sara Cheng")
-        ignored = CanonicalNode(uuid4(), "person", "Sarai Chen")
-        store = FakeResolverStore(
+        store = FakeSearchStore(
             [
-                NodeCandidate(sarah, "identifier", 0.99, ["exact alias"]),
-                NodeCandidate(sara, "fuzzy", 0.95, ["similar title"]),
-                NodeCandidate(ignored, "fuzzy", 0.90, ["similar title"]),
+                sarah,
+                _result("person", "Sara Cheng", "fuzzy", 0.95, ["similar title"]),
+                _result("person", "Sarai Chen", "profile", 0.70, ["related"]),
             ]
         )
-        app.dependency_overrides[get_resolver_store] = lambda: store
+        app.dependency_overrides[get_node_search_store] = lambda: store
 
         response = TestClient(app).post(
             "/api/v1/nodes/query",
@@ -60,6 +61,7 @@ class NodeQueryApiTests(unittest.TestCase):
         self.assertEqual(body["query"], "Sara Chen")
         self.assertEqual(len(body["matches"]), 2)
         self.assertEqual(body["matches"][0]["node_id"], str(sarah.node_id))
+        self.assertEqual(body["matches"][1]["match_score"], 0.95)
         self.assertEqual(body["matches"][0]["match_kind"], "identifier")
         self.assertEqual(body["matches"][0]["identifiers"], ["Sarah"])
         call = store.calls[0]
@@ -72,11 +74,10 @@ class NodeQueryApiTests(unittest.TestCase):
         self.assertEqual(call["limit"], 2)
 
     def test_searches_without_a_type_filter_when_type_is_omitted(self) -> None:
-        person = CanonicalNode(uuid4(), "person", "Jordan")
-        store = FakeResolverStore(
-            [NodeCandidate(person, "normalized_title", 0.98, ["exact title"])]
+        store = FakeSearchStore(
+            [_result("person", "Jordan", "normalized_title", 0.98, ["exact title"])]
         )
-        app.dependency_overrides[get_resolver_store] = lambda: store
+        app.dependency_overrides[get_node_search_store] = lambda: store
 
         response = TestClient(app).post(
             "/api/v1/nodes/query",
@@ -90,7 +91,7 @@ class NodeQueryApiTests(unittest.TestCase):
         self.assertIsNone(store.calls[0]["node_type"])
 
     def test_rejects_invalid_query_inputs(self) -> None:
-        app.dependency_overrides[get_resolver_store] = lambda: FakeResolverStore([])
+        app.dependency_overrides[get_node_search_store] = lambda: FakeSearchStore([])
         client = TestClient(app)
 
         blank = client.post(

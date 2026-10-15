@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
+import psycopg
+
 from app.db import get_async_connection, get_connection
+from app.embeddings import EmbeddingError
+from app.persistence.postgres.projection_search import nearest_node_projections
+from app.search.common import DocumentEmbedder
+from app.workflows.ingest.identity_candidates import (
+    IDENTITY_EMBEDDING_LIMIT,
+    IDENTITY_EMBEDDING_THRESHOLD,
+    identity_embedding_candidate,
+    merge_identity_candidates,
+    needs_identity_embedding,
+    proposed_identity_text,
+)
 from app.workflows.ingest.relation_types import RelationDefinition
 from app.workflows.ingest.resolve_proposed_subgraph import (
     CanonicalEdge,
@@ -13,7 +27,10 @@ from app.workflows.ingest.resolve_proposed_subgraph import (
     RelationType,
     SimpleCanonicalGraphResolverStore,
 )
-from app.workflows.ingest.types import NodeType, ProposedExternalId, ProposedNode
+from app.workflows.ingest.types import ProposedExternalId, ProposedNode
+
+
+logger = logging.getLogger(__name__)
 
 
 _RELATION_COLUMNS = """
@@ -70,211 +87,19 @@ class PostgresCanonicalGraphResolverStore:
     """Read current workspace graph state directly from PostgreSQL.
 
     Ingestion resolution delegates snapshot scoring to the prototype lexical
-    scorer. Interactive search uses one bounded, index-backed SQL query until
-    the documented search projections are available.
+    scorer, then adds identity-projection candidates when an embedder is given
+    and lexical matching found no exact match. Client search is separate, in
+    ``app.persistence.postgres.node_search``.
     """
 
-    def __init__(self, *, fuzzy_candidate_threshold: float = 0.50) -> None:
-        self.fuzzy_candidate_threshold = fuzzy_candidate_threshold
-
-    async def search_node_candidates(
+    def __init__(
         self,
         *,
-        workspace_id: UUID,
-        query: str,
-        node_type: NodeType | None,
-        aliases: list[str],
-        external_ids: list[ProposedExternalId],
-        limit: int,
-    ) -> list[NodeCandidate]:
-        """Rank an interactive node search in one bounded SQL statement."""
-
-        names = list(dict.fromkeys([query, *aliases]))
-        providers = [item.provider for item in external_ids]
-        provider_external_ids = [item.external_id for item in external_ids]
-        node_type_filter = (
-            "AND n.node_type = %(node_type)s" if node_type is not None else ""
-        )
-        sql = f"""
-            WITH input_names AS (
-                SELECT DISTINCT lower(btrim(value)) AS name
-                FROM unnest(%(names)s::text[]) AS value
-                WHERE btrim(value) <> ''
-            ),
-            input_external_ids AS (
-                SELECT lower(btrim(provider)) AS provider, external_id
-                FROM unnest(
-                    %(providers)s::text[],
-                    %(provider_external_ids)s::text[]
-                ) AS item(provider, external_id)
-            ),
-            matches AS (
-                SELECT
-                    e.node_id,
-                    'external_id'::text AS match_kind,
-                    1.0::double precision AS match_score,
-                    1 AS match_priority,
-                    'matching ' || x.provider || ' external ID' AS reason
-                FROM input_external_ids AS x
-                JOIN node_external_id AS e
-                  ON e.workspace_id = %(workspace_id)s
-                 AND lower(e.provider) = x.provider
-                 AND e.external_id = x.external_id
-                 AND e.deleted_at IS NULL
-                JOIN memory_node AS n
-                  ON n.workspace_id = e.workspace_id
-                 AND n.id = e.node_id
-                 AND n.deleted_at IS NULL
-                 AND n.merged_into_node_id IS NULL
-                 {node_type_filter}
-
-                UNION ALL
-
-                SELECT
-                    i.node_id,
-                    'identifier'::text,
-                    0.99::double precision,
-                    2,
-                    'exact identifier match: ' || quote_literal(i.identifier_text)
-                FROM input_names AS q
-                JOIN node_identifier AS i
-                  ON i.workspace_id = %(workspace_id)s
-                 AND i.scope = 'global'
-                 AND lower(i.identifier_text) = q.name
-                 AND i.deleted_at IS NULL
-                JOIN memory_node AS n
-                  ON n.workspace_id = i.workspace_id
-                 AND n.id = i.node_id
-                 AND n.deleted_at IS NULL
-                 AND n.merged_into_node_id IS NULL
-                 {node_type_filter}
-
-                UNION ALL
-
-                SELECT
-                    n.id,
-                    'normalized_title'::text,
-                    0.98::double precision,
-                    3,
-                    'exact normalized title match: ' || quote_literal(n.name)
-                FROM input_names AS q
-                JOIN memory_node AS n
-                  ON n.workspace_id = %(workspace_id)s
-                 AND lower(n.name) = q.name
-                 AND n.deleted_at IS NULL
-                 AND n.merged_into_node_id IS NULL
-                 {node_type_filter}
-
-                UNION ALL
-
-                SELECT
-                    n.id,
-                    'fuzzy'::text,
-                    similarity(lower(n.name), q.name)::double precision,
-                    4,
-                    quote_literal(q.name) || ' is lexically similar to '
-                        || quote_literal(n.name)
-                FROM input_names AS q
-                JOIN memory_node AS n
-                  ON n.workspace_id = %(workspace_id)s
-                 AND lower(n.name) %% q.name
-                 AND lower(n.name) <> q.name
-                 AND n.deleted_at IS NULL
-                 AND n.merged_into_node_id IS NULL
-                 {node_type_filter}
-                WHERE similarity(lower(n.name), q.name)
-                    >= %(fuzzy_candidate_threshold)s
-
-                UNION ALL
-
-                SELECT
-                    i.node_id,
-                    'fuzzy'::text,
-                    similarity(lower(i.identifier_text), q.name)::double precision,
-                    5,
-                    quote_literal(q.name) || ' is lexically similar to '
-                        || quote_literal(i.identifier_text)
-                FROM input_names AS q
-                JOIN node_identifier AS i
-                  ON i.workspace_id = %(workspace_id)s
-                 AND i.scope = 'global'
-                 AND lower(i.identifier_text) %% q.name
-                 AND lower(i.identifier_text) <> q.name
-                 AND i.deleted_at IS NULL
-                JOIN memory_node AS n
-                  ON n.workspace_id = i.workspace_id
-                 AND n.id = i.node_id
-                 AND n.deleted_at IS NULL
-                 AND n.merged_into_node_id IS NULL
-                 {node_type_filter}
-                WHERE similarity(lower(i.identifier_text), q.name)
-                    >= %(fuzzy_candidate_threshold)s
-            ),
-            best_match AS (
-                SELECT DISTINCT ON (node_id)
-                    node_id,
-                    match_kind,
-                    match_score,
-                    reason
-                FROM matches
-                ORDER BY node_id, match_score DESC, match_priority
-            )
-            SELECT
-                n.id AS node_id,
-                n.node_type,
-                n.name AS title,
-                COALESCE(i.identifiers, ARRAY[]::text[]) AS identifiers,
-                b.match_kind,
-                b.match_score,
-                b.reason
-            FROM best_match AS b
-            JOIN memory_node AS n
-              ON n.workspace_id = %(workspace_id)s
-             AND n.id = b.node_id
-            LEFT JOIN LATERAL (
-                SELECT array_agg(
-                    DISTINCT ni.identifier_text ORDER BY ni.identifier_text
-                ) AS identifiers
-                FROM node_identifier AS ni
-                WHERE ni.workspace_id = n.workspace_id
-                  AND ni.node_id = n.id
-                  AND ni.deleted_at IS NULL
-            ) AS i ON true
-            ORDER BY
-                b.match_score DESC,
-                lower(n.name),
-                n.id
-            LIMIT %(limit)s
-        """
-        async with get_async_connection() as conn:
-            cursor = await conn.execute(
-                sql,
-                {
-                    "workspace_id": workspace_id,
-                    "names": names,
-                    "providers": providers,
-                    "provider_external_ids": provider_external_ids,
-                    "node_type": node_type,
-                    "fuzzy_candidate_threshold": self.fuzzy_candidate_threshold,
-                    "limit": limit,
-                },
-            )
-            rows = await cursor.fetchall()
-
-        return [
-            NodeCandidate(
-                node=CanonicalNode(
-                    node_id=row["node_id"],
-                    node_type=row["node_type"],
-                    title=row["title"],
-                    identifiers=row["identifiers"],
-                ),
-                match_kind=row["match_kind"],
-                match_score=row["match_score"],
-                reasons=[row["reason"]],
-            )
-            for row in rows
-        ]
+        fuzzy_candidate_threshold: float = 0.50,
+        embedder: DocumentEmbedder | None = None,
+    ) -> None:
+        self.fuzzy_candidate_threshold = fuzzy_candidate_threshold
+        self.embedder = embedder
 
     async def find_node_candidates(
         self,
@@ -354,10 +179,56 @@ class PostgresCanonicalGraphResolverStore:
             nodes=snapshot,
             fuzzy_candidate_threshold=self.fuzzy_candidate_threshold,
         )
-        return await scorer.find_node_candidates(
+        lexical = await scorer.find_node_candidates(
             workspace_id=workspace_id,
             proposed_node=proposed_node,
         )
+        if self.embedder is None or not needs_identity_embedding(lexical):
+            return lexical
+        embedding = await self._identity_embedding_candidates(
+            workspace_id=workspace_id,
+            proposed_node=proposed_node,
+            snapshot={node.node_id: node for node in snapshot},
+        )
+        return merge_identity_candidates(lexical, embedding)
+
+    async def _identity_embedding_candidates(
+        self,
+        *,
+        workspace_id: UUID,
+        proposed_node: ProposedNode,
+        snapshot: dict[UUID, CanonicalNode],
+    ) -> list[NodeCandidate]:
+        assert self.embedder is not None
+        try:
+            # Document prefix on both sides: this is a symmetric comparison
+            # against stored identity projections, not a query.
+            [vector] = await self.embedder.embed_documents(
+                [proposed_identity_text(proposed_node)]
+            )
+            matches = await nearest_node_projections(
+                workspace_id=workspace_id,
+                vector=vector,
+                embedding_model=self.embedder.model,
+                projection_types=("identity",),
+                node_type=proposed_node.node_type,
+                limit=IDENTITY_EMBEDDING_LIMIT,
+                min_similarity=IDENTITY_EMBEDDING_THRESHOLD,
+            )
+        except (EmbeddingError, psycopg.errors.UndefinedTable) as exc:
+            logger.warning("Identity embedding candidates unavailable: %s", exc)
+            return []
+        candidates = []
+        for match in matches:
+            canonical_node = snapshot.get(match.node_id)
+            if canonical_node is None:
+                continue
+            candidate = identity_embedding_candidate(
+                proposed_node, canonical_node, match.similarity
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
 
     async def find_edges_between(
         self,

@@ -67,8 +67,8 @@ PROVIDER_LABELS = {
     "manual_import": "a manual import",
 }
 
-# Person contact fields that are also mirrored into external IDs. Their raw
-# values go into search_text only; instagram also appears as an @handle alias.
+# Person contact external IDs. Their raw values go into search_text only;
+# instagram also appears as an @handle alias.
 _CONTACT_PROVIDERS = {"email", "phone", "instagram"}
 
 
@@ -311,14 +311,12 @@ def projection_source_hash(text: NodeProjectionText, *, embedding_model: str) ->
 
 
 def _aliases(source: NodeProjectionSource, name: str) -> list[str]:
-    details = source.type_specific or {}
-    candidates: list[str] = []
-    if source.node_type == "person":
-        for key in ("display_name", "legal_name"):
-            if isinstance(details.get(key), str):
-                candidates.append(details[key])
-        if isinstance(details.get("instagram"), str):
-            candidates.append(f"@{details['instagram']}")
+    # Handles are how people are referred to, so they read as aliases.
+    candidates = [
+        f"@{item.external_id.removeprefix('@')}"
+        for item in source.external_ids
+        if item.provider.casefold() == "instagram"
+    ]
     identifiers = sorted(
         source.identifiers, key=lambda item: (-item.confidence, item.text.casefold())
     )
@@ -354,12 +352,6 @@ def _identity_search_values(source: NodeProjectionSource) -> list[str]:
         for item in source.external_ids
         if item.provider.casefold() in _CONTACT_PROVIDERS
     ]
-    if source.node_type == "person":
-        values.extend(
-            str(details[key])
-            for key in ("email", "phone_number")
-            if details.get(key) is not None
-        )
     if source.node_type == "location" and details.get("address"):
         values.append(str(details["address"]))
     if source.node_type == "date":

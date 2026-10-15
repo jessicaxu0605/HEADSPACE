@@ -44,7 +44,13 @@ NodeMatchKind: TypeAlias = Literal[
     "type_specific",
     "normalized_title",
     "fuzzy",
+    # Similar identity search projection; see identity_candidates.py.
+    "identity_embedding",
 ]
+
+# Similarity-based kinds. They can resolve only on score and margin; any other
+# kind is an exact match.
+FUZZY_MATCH_KINDS: frozenset[str] = frozenset({"fuzzy", "identity_embedding"})
 
 # TODO: tune these values
 @dataclass(frozen=True, slots=True)
@@ -143,27 +149,11 @@ class CanonicalGraphResolverStore(Protocol):
     ) -> set[UUID]: ...
 
 
-class NodeCandidateSearchStore(Protocol):
-    """Search canonical nodes for an interactive user query."""
-
-    async def search_node_candidates(
-        self,
-        *,
-        workspace_id: UUID,
-        query: str,
-        node_type: NodeType | None,
-        aliases: list[str],
-        external_ids: list[ProposedExternalId],
-        limit: int,
-    ) -> list[NodeCandidate]: ...
-
-
 class SimpleCanonicalGraphResolverStore:
     """Small lexical resolver over an in-memory canonical graph snapshot.
 
-    This is the baseline implementation for the prototype. A PostgreSQL adapter can
-    load the same records and delegate candidate scoring here until search
-    projections or identity embeddings are available.
+    This is the baseline implementation for the prototype. The PostgreSQL adapter
+    loads the same records and delegates ingestion candidate scoring here.
     """
 
     def __init__(
@@ -1276,7 +1266,7 @@ def _choose_node_candidate(
     policy: ResolutionPolicy,
 ) -> tuple[Literal["resolve", "create", "ambiguous"], NodeCandidate | None]:
     ordered = sorted(candidates, key=lambda item: item.match_score, reverse=True)
-    exact = [item for item in ordered if item.match_kind != "fuzzy"]
+    exact = [item for item in ordered if item.match_kind not in FUZZY_MATCH_KINDS]
     exact_node_ids = {item.node.node_id for item in exact}
     if len(exact_node_ids) > 1:
         return "ambiguous", None

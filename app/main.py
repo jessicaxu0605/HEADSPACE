@@ -22,6 +22,7 @@ from app.db import (
     close_async_pool,
     open_async_pool,
 )
+from app.embeddings import OllamaEmbeddingEngine
 from app.graph.queries.edge_detail import EdgeDetailStore, EdgeStatus
 from app.graph.queries.node_neighborhood import NeighborhoodNode, NodeNeighborhoodStore
 from app.graph.queries.run_graph import (
@@ -35,6 +36,7 @@ from app.persistence.postgres.canonical_graph import (
 )
 from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
 from app.persistence.postgres.node_neighborhood import PostgresNodeNeighborhoodStore
+from app.persistence.postgres.node_search import PostgresNodeSearchStore
 from app.persistence.postgres.run_graph import PostgresRunGraphStore
 from app.workflows.ingest.enrich_type_specific import TypeSpecificEnrichmentLLM
 from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
@@ -42,11 +44,8 @@ from app.workflows.ingest.groq_chunk_extraction import GroqChunkExtractionLLM
 from app.workflows.ingest.groq_type_specific_enrichment import (
     GroqTypeSpecificEnrichmentLLM,
 )
-from app.workflows.ingest.resolve_proposed_subgraph import (
-    CanonicalGraphResolverStore,
-    NodeCandidateSearchStore,
-    NodeMatchKind,
-)
+from app.search.node_search import NodeSearchMatchKind, NodeSearchStore
+from app.workflows.ingest.resolve_proposed_subgraph import CanonicalGraphResolverStore
 from app.workflows.ingest.type_specific import displayable_type_specific
 from app.workflows.ingest.types import (
     IngestionRunRecord,
@@ -169,7 +168,7 @@ class NodeQueryMatchResponse(BaseModel):
     node_type: str
     title: str
     identifiers: list[str]
-    match_kind: NodeMatchKind
+    match_kind: NodeSearchMatchKind
     match_score: float
     reasons: list[str]
 
@@ -365,7 +364,14 @@ def get_enrichment_llm() -> GroqTypeSpecificEnrichmentLLM:
 def get_resolver_store() -> PostgresCanonicalGraphResolverStore:
     """Return live workspace-scoped canonical graph reads."""
 
-    return PostgresCanonicalGraphResolverStore()
+    return PostgresCanonicalGraphResolverStore(embedder=OllamaEmbeddingEngine())
+
+
+@lru_cache(maxsize=1)
+def get_node_search_store() -> NodeSearchStore:
+    """Return client node search over lexical matches and projection vectors."""
+
+    return PostgresNodeSearchStore(embedder=OllamaEmbeddingEngine())
 
 
 @lru_cache(maxsize=1)
@@ -456,12 +462,12 @@ async def health() -> dict[str, str]:
 )
 async def query_node(
     request: NodeQueryRequest,
-    resolver_store: NodeCandidateSearchStore = Depends(get_resolver_store),
+    search_store: NodeSearchStore = Depends(get_node_search_store),
 ) -> NodeQueryResponse:
-    """Return canonical nodes ranked by the ingestion identity matcher."""
+    """Return canonical nodes related to the query, by keyword and meaning."""
 
     workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
-    candidates = await resolver_store.search_node_candidates(
+    results = await search_store.search_nodes(
         workspace_id=workspace_id,
         query=request.query,
         node_type=request.node_type,
@@ -477,15 +483,15 @@ async def query_node(
         node_type=request.node_type,
         matches=[
             NodeQueryMatchResponse(
-                node_id=candidate.node.node_id,
-                node_type=candidate.node.node_type,
-                title=candidate.node.title,
-                identifiers=candidate.node.identifiers,
-                match_kind=candidate.match_kind,
-                match_score=candidate.match_score,
-                reasons=candidate.reasons,
+                node_id=result.node_id,
+                node_type=result.node_type,
+                title=result.title,
+                identifiers=result.identifiers,
+                match_kind=result.match_kind,
+                match_score=result.score,
+                reasons=result.reasons,
             )
-            for candidate in candidates
+            for result in results
         ],
     )
 

@@ -56,7 +56,7 @@ curl -X POST http://localhost:8000/api/v1/ingestions \
 
 The completed response includes the extracted `result.proposed_graph` and the applied create-or-resolve output in `result.transaction_plan`. Fetch a persisted run later with `GET /api/v1/ingestions/{run_id}`. Interactive API documentation is at `http://localhost:8000/docs`.
 
-Query canonical nodes with the same exact-then-fuzzy identity matcher used by ingestion. Omit `node_type` to search every supported type, or include it to narrow the results. Aliases and external IDs are optional identity signals:
+Search canonical nodes related to a query. Results combine lexical matches (exact external IDs, identifiers, and titles, then trigram-fuzzy names) with vector matches against each node's `identity` and `profile` search projections. Exact matches rank first; the rest are ordered by reciprocal rank fusion of the fuzzy and vector rankings, so nodes found both ways rise. `match_kind` and `match_score` report the mechanism that ranked each node highest. Without Ollama or built projections, search falls back to lexical matches. Omit `node_type` to search every supported type, or include it to narrow the results. Aliases and external IDs are optional exact-match signals:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/nodes/query \
@@ -109,7 +109,7 @@ Ingestion queues affected nodes and edges in `projection_rebuild_queue`. To proc
 python -m app.search.rebuild_projections
 ```
 
-Vector search queries are not built yet.
+Client search (`app/search/node_search.py`, `app/persistence/postgres/node_search.py`) and ingestion resolution are separate: search favors related nodes, resolution asks whether a proposed node is the same identity as an existing one. Resolution adds identity-projection candidates (`app/workflows/ingest/identity_candidates.py`) only when lexical matching found no exact match. Short identity texts embed too similarly to tell same from different entities ("Sarah Chen" vs "Sarah Kim" ≈ 0.86), so those candidates are capped below the auto-resolve threshold: alone they produce `possible_duplicate` review items, and they resolve only when shared graph neighbors raise the score. Both read vectors through `app/persistence/postgres/projection_search.py`. Edge projections are built but not yet searched.
 
 ### Node summaries
 

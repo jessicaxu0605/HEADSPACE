@@ -47,19 +47,18 @@ def _sarah() -> NodeProjectionSource:
         name="Sarah Chen",
         summary="Product designer Jessica met during co-op",
         type_specific={
-            "display_name": "Sarah",
-            "email": "sarah@example.com",
-            "instagram": "sarahc",
             "pronouns": "she/her",
             "relationship_context": "co-op teammate",
         },
         identifiers=[
+            ProjectionIdentifier("Sarah", confidence=0.95),
             ProjectionIdentifier("Sarah C", confidence=0.6),
             ProjectionIdentifier("sarah chen", confidence=0.9),
         ],
         external_ids=[
             ProjectionExternalId("google_contacts", "people/c123"),
             ProjectionExternalId("email", "sarah@example.com"),
+            ProjectionExternalId("instagram", "sarahc"),
         ],
         edges=[
             _edge(
@@ -94,7 +93,7 @@ class NodeProjectionTextTests(unittest.TestCase):
 
         self.assertEqual(
             projection.embedding_text,
-            "Sarah Chen. Also referred to as Sarah, @sarahc, Sarah C. "
+            "Sarah Chen. Also referred to as @sarahc, Sarah, Sarah C. "
             "Person from Google Contacts.",
         )
         # Raw contact values are searchable but stay out of the embedding.
