@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.db import get_connection
+from app.persistence.postgres.connection import get_connection
 
 
 MIGRATIONS_ROOT = Path(__file__).resolve().parents[1] / "migrations"

@@ -12,7 +12,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
-from app.db import close_async_pool, open_async_pool
+from app.persistence.postgres.connection import close_async_pool, open_async_pool
 from app.embeddings import OllamaEmbeddingEngine
 from app.persistence.postgres.edge_projection import PostgresEdgeProjectionStore
 from app.persistence.postgres.node_projection import PostgresNodeProjectionStore

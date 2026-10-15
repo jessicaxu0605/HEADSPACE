@@ -121,6 +121,8 @@ export default function App() {
   };
 
   const isGraphPage = graphExplorer.selection !== null;
+  const hideContinueButton =
+    (query.length > 0 && searchFocused) || matches.length > 0;
 
   return (
     <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
@@ -165,10 +167,10 @@ export default function App() {
         {!isGraphPage && (
           <div className="continue-wrap">
             <button
-              className={`text-button continue-button${query && searchFocused ? " is-search-active" : ""}`}
+              className={`text-button continue-button${hideContinueButton ? " is-search-active" : ""}`}
               type="button"
-              aria-hidden={query && searchFocused ? true : undefined}
-              tabIndex={query && searchFocused ? -1 : undefined}
+              aria-hidden={hideContinueButton ? true : undefined}
+              tabIndex={hideContinueButton ? -1 : undefined}
               onClick={openEntry}
             >
               add a thought&nbsp; ↓

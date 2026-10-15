@@ -5,10 +5,7 @@ import {
   type NodeNeighborhoodResponse,
 } from "../api";
 import type { MemoryNodeReference, MemoryRunGraph } from "../memory_graph";
-import {
-  waitForBrainLoaderFade,
-  waitForBrainLoaderLeadIn,
-} from "../loading";
+import { waitForBrainLoaderFade, waitForBrainLoaderLeadIn } from "../loading";
 
 // The graph page centers on one node, or shows everything one ingestion run touched.
 export type GraphSelection =
@@ -134,7 +131,7 @@ export default function useNeighborhoodExplorer() {
 
       try {
         const payload = await getNodeNeighborhood(nextSelection.node_id, {
-          depth: 2,
+          depth: 1,
           signal: request.signal,
         });
         await waitForBrainLoaderLeadIn(loaderStartedAt);

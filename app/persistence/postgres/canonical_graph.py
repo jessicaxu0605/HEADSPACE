@@ -7,10 +7,9 @@ from uuid import UUID
 
 import psycopg
 
-from app.db import get_async_connection, get_connection
-from app.embeddings import EmbeddingError
+from app.persistence.postgres.connection import get_async_connection, get_connection
 from app.persistence.postgres.projection_search import nearest_node_projections
-from app.search.common import DocumentEmbedder
+from app.search.common import DocumentEmbedder, EmbeddingError
 from app.workflows.ingest.identity_candidates import (
     IDENTITY_EMBEDDING_LIMIT,
     IDENTITY_EMBEDDING_THRESHOLD,

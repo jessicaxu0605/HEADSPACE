@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.db import DEFAULT_DEVELOPMENT_WORKSPACE_ID
+from app.persistence.postgres.connection import DEFAULT_DEVELOPMENT_WORKSPACE_ID
 from app.main import app, get_run_graph_store
 from app.graph.queries.run_graph import RunGraph, RunGraphEdge, RunGraphNode
 

@@ -129,7 +129,7 @@ async def drain_summary_refresh_queue(
 
 
 async def main() -> None:
-    from app.db import close_async_pool, open_async_pool
+    from app.persistence.postgres.connection import close_async_pool, open_async_pool
     from app.persistence.postgres.summary_refresh_queue import (
         PostgresSummaryRefreshStore,
     )

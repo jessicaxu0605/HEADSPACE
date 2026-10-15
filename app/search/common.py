@@ -7,6 +7,10 @@ from datetime import datetime
 from typing import Any, Protocol
 
 
+class EmbeddingError(RuntimeError):
+    """Raised when an embedding provider cannot produce a valid vector."""
+
+
 class DocumentEmbedder(Protocol):
     model: str
 

@@ -10,7 +10,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
-from app.db import get_connection
+from app.persistence.postgres.connection import get_connection
 from app.serialization import to_jsonable
 from app.storage import write_storage_object
 from app.workflows.ingest.enrich_type_specific import (

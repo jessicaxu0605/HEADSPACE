@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from uuid import UUID
 
-from app.db import get_async_connection
+from app.persistence.postgres.connection import get_async_connection
 from app.persistence.postgres.node_projection import vector_literal
 from app.search.edge_projection import (
     EdgeProjectionSource,

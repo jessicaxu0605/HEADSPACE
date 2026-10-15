@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.embeddings import EmbeddingError
-from app.persistence.postgres.node_search import PostgresNodeSearchStore
+from app.persistence.postgres.node_search import PostgresNodeSearchRepository
 from app.persistence.postgres.projection_search import ProjectionMatch
-from app.search.node_search import NodeSearchResult, merge_search_results
+from app.search.node_search import (
+    NodeSearchEngine,
+    NodeSearchResult,
+    merge_search_results,
+)
 
 
 def _result(node_id, match_kind, score, reason, title="Sarah Chen", identifiers=()):
@@ -115,32 +120,32 @@ class FailingEmbedder:
         raise EmbeddingError("Ollama is down")
 
 
-class FixedEmbedder:
-    model = "test-model"
-
-    async def embed_query(self, text):
-        return [1.0, 0.0]
-
-
-class PostgresNodeSearchStoreTests(unittest.IsolatedAsyncioTestCase):
+class NodeSearchEngineTests(unittest.IsolatedAsyncioTestCase):
     async def test_falls_back_to_lexical_when_embedding_fails(self) -> None:
-        store = PostgresNodeSearchStore(embedder=FailingEmbedder())
         lexical = [_result(uuid4(), "fuzzy", 0.7, "similar title")]
-        with patch.object(store, "_search_lexical", AsyncMock(return_value=lexical)):
-            with self.assertLogs("app.persistence.postgres.node_search", "WARNING"):
-                results = await store.search_nodes(
-                    workspace_id=uuid4(),
-                    query="Sarah",
-                    node_type=None,
-                    aliases=[],
-                    external_ids=[],
-                    limit=5,
-                )
+        repository = SimpleNamespace(
+            search_lexical=AsyncMock(return_value=lexical),
+            search_semantic=AsyncMock(return_value=[]),
+        )
+        engine = NodeSearchEngine(repository=repository, embedder=FailingEmbedder())
+        with self.assertLogs("app.search.node_search", "WARNING"):
+            results = await engine.search_nodes(
+                workspace_id=uuid4(),
+                query="Sarah",
+                node_type=None,
+                aliases=[],
+                external_ids=[],
+                limit=5,
+            )
 
         self.assertEqual(results, lexical)
+        repository.search_semantic.assert_not_awaited()
 
+
+class PostgresNodeSearchRepositoryTests(unittest.IsolatedAsyncioTestCase):
     async def test_semantic_matches_become_identity_and_profile_results(self) -> None:
-        store = PostgresNodeSearchStore(embedder=FixedEmbedder())
+        repository = PostgresNodeSearchRepository()
+
         node_id = uuid4()
         nearest = AsyncMock(
             return_value=[
@@ -148,9 +153,12 @@ class PostgresNodeSearchStoreTests(unittest.IsolatedAsyncioTestCase):
                 ProjectionMatch(node_id, "identity", 0.61),
             ]
         )
-        node_row = {"node_type": "person", "title": "Sarah Chen", "identifiers": ["Sarah"]}
+        node_row = {
+            "node_type": "person",
+            "title": "Sarah Chen",
+            "identifiers": ["Sarah"],
+        }
         with (
-            patch.object(store, "_search_lexical", AsyncMock(return_value=[])),
             patch(
                 "app.persistence.postgres.node_search.nearest_node_projections", nearest
             ),
@@ -159,26 +167,24 @@ class PostgresNodeSearchStoreTests(unittest.IsolatedAsyncioTestCase):
                 AsyncMock(return_value={node_id: node_row}),
             ),
         ):
-            results = await store.search_nodes(
+            results = await repository.search_semantic(
                 workspace_id=uuid4(),
-                query="who likes matcha",
+                vector=[1.0, 0.0],
+                embedding_model="test-model",
                 node_type="person",
-                aliases=[],
-                external_ids=[],
-                limit=5,
+                limit=10,
+                min_similarity=0.55,
             )
 
-        self.assertEqual(len(results), 1)
+        self.assertEqual(len(results), 2)
         self.assertEqual(results[0].match_kind, "profile")
         self.assertEqual(results[0].score, 0.74)
         self.assertEqual(results[0].identifiers, ["Sarah"])
         self.assertEqual(
             results[0].reasons,
-            [
-                "query matches what this person is associated with (0.74)",
-                "query describes this person (0.61)",
-            ],
+            ["query matches what this person is associated with (0.74)"],
         )
+        self.assertEqual(results[1].reasons, ["query describes this person (0.61)"])
         kwargs = nearest.await_args.kwargs
         self.assertEqual(kwargs["projection_types"], ("identity", "profile"))
         self.assertEqual(kwargs["node_type"], "person")

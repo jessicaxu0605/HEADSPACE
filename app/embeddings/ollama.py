@@ -14,6 +14,8 @@ from urllib.request import Request, urlopen
 
 from dotenv import dotenv_values
 
+from app.search.common import EmbeddingError
+
 
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
@@ -21,10 +23,6 @@ DEFAULT_EMBEDDING_DIMENSIONS = 768
 DEFAULT_DOCUMENT_PREFIX = "search_document: "
 DEFAULT_QUERY_PREFIX = "search_query: "
 DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
-
-
-class EmbeddingError(RuntimeError):
-    """Raised when embeddings cannot be generated or fail validation."""
 
 
 Transport = Callable[[str, Mapping[str, Any], float], Mapping[str, Any]]

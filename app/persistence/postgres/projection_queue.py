@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from app.db import get_async_connection
+from app.persistence.postgres.connection import get_async_connection
 
 
 QueueObjectType = Literal["node", "edge"]

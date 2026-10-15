@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app.db import get_database_url
+from app.persistence.postgres.connection import get_database_url
 
 
 class DatabaseConfigurationTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class DatabaseConfigurationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch.dict("os.environ", {}, clear=True), patch(
-                "app.db.DEFAULT_LOCAL_ENV_PATH", env_path
+                "app.persistence.postgres.connection.DEFAULT_LOCAL_ENV_PATH", env_path
             ):
                 self.assertEqual(
                     get_database_url(),

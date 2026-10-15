@@ -1,24 +1,16 @@
-"""PostgreSQL-backed client node search (lexical + projection vectors)."""
+"""PostgreSQL retrieval for lexical and projection-based node search."""
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Sequence
 from uuid import UUID
 
 import psycopg
 
-from app.db import get_async_connection
-from app.embeddings import EmbeddingError
+from app.persistence.postgres.connection import get_async_connection
 from app.persistence.postgres.projection_search import nearest_node_projections
-from app.search.node_search import (
-    DEFAULT_FUZZY_THRESHOLD,
-    DEFAULT_SEMANTIC_THRESHOLD,
-    MIN_FUSION_DEPTH,
-    NodeSearchResult,
-    QueryEmbedder,
-    merge_search_results,
-)
+from app.search.node_search import NodeSearchResult
 from app.workflows.ingest.types import NodeType, ProposedExternalId
 
 
@@ -30,25 +22,10 @@ _PROJECTION_REASONS = {
 }
 
 
-class PostgresNodeSearchStore:
-    """Rank nodes by exact matches, then RRF of fuzzy and projection similarity.
+class PostgresNodeSearchRepository:
+    """Read lexical and vector-search candidates from PostgreSQL."""
 
-    Without an embedder, or when Ollama or the projection tables are
-    unavailable, search falls back to lexical matches only.
-    """
-
-    def __init__(
-        self,
-        *,
-        embedder: QueryEmbedder | None = None,
-        fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
-        semantic_threshold: float = DEFAULT_SEMANTIC_THRESHOLD,
-    ) -> None:
-        self.embedder = embedder
-        self.fuzzy_threshold = fuzzy_threshold
-        self.semantic_threshold = semantic_threshold
-
-    async def search_nodes(
+    async def search_lexical(
         self,
         *,
         workspace_id: UUID,
@@ -57,35 +34,7 @@ class PostgresNodeSearchStore:
         aliases: list[str],
         external_ids: list[ProposedExternalId],
         limit: int,
-    ) -> list[NodeSearchResult]:
-        depth = max(limit * 2, MIN_FUSION_DEPTH)
-        lexical, semantic = await asyncio.gather(
-            self._search_lexical(
-                workspace_id=workspace_id,
-                query=query,
-                node_type=node_type,
-                aliases=aliases,
-                external_ids=external_ids,
-                limit=depth,
-            ),
-            self._search_semantic(
-                workspace_id=workspace_id,
-                query=query,
-                node_type=node_type,
-                limit=depth,
-            ),
-        )
-        return merge_search_results(lexical, semantic, limit=limit)
-
-    async def _search_lexical(
-        self,
-        *,
-        workspace_id: UUID,
-        query: str,
-        node_type: NodeType | None,
-        aliases: list[str],
-        external_ids: list[ProposedExternalId],
-        limit: int,
+        fuzzy_threshold: float,
     ) -> list[NodeSearchResult]:
         """Exact and trigram-fuzzy matches in one bounded SQL statement."""
 
@@ -256,7 +205,7 @@ class PostgresNodeSearchStore:
                     "providers": providers,
                     "provider_external_ids": provider_external_ids,
                     "node_type": node_type,
-                    "fuzzy_threshold": self.fuzzy_threshold,
+                    "fuzzy_threshold": fuzzy_threshold,
                     "limit": limit,
                 },
             )
@@ -275,35 +224,35 @@ class PostgresNodeSearchStore:
             for row in rows
         ]
 
-    async def _search_semantic(
+    async def search_semantic(
         self,
         *,
         workspace_id: UUID,
-        query: str,
+        vector: Sequence[float],
+        embedding_model: str,
         node_type: NodeType | None,
         limit: int,
+        min_similarity: float,
     ) -> list[NodeSearchResult]:
-        if self.embedder is None:
-            return []
         try:
-            vector = await self.embedder.embed_query(query)
             matches = await nearest_node_projections(
                 workspace_id=workspace_id,
                 vector=vector,
-                embedding_model=self.embedder.model,
+                embedding_model=embedding_model,
                 projection_types=("identity", "profile"),
                 node_type=node_type,
-                # Each node can match through both projections.
-                limit=limit * 2,
-                min_similarity=self.semantic_threshold,
+                limit=limit,
+                min_similarity=min_similarity,
             )
-        except (EmbeddingError, psycopg.errors.UndefinedTable) as exc:
-            logger.warning("Semantic node search unavailable: %s", exc)
-            return []
-        if not matches:
+            if not matches:
+                return []
+            nodes = await _load_nodes(
+                workspace_id, [match.node_id for match in matches]
+            )
+        except psycopg.errors.UndefinedTable as exc:
+            logger.warning("Semantic node search tables unavailable: %s", exc)
             return []
 
-        nodes = await _load_nodes(workspace_id, [match.node_id for match in matches])
         results = []
         for match in matches:
             node = nodes.get(match.node_id)
@@ -345,7 +294,7 @@ async def _load_nodes(workspace_id: UUID, node_ids: list[UUID]) -> dict[UUID, di
              AND i.node_id = n.id
              AND i.deleted_at IS NULL
             WHERE n.workspace_id = %s AND n.id = ANY(%s)
-            GROUP BY n.id
+            GROUP BY n.id, n.node_type, n.name
             """,
             (workspace_id, node_ids),
         )

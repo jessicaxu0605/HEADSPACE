@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
-from app.db import get_async_connection
+from app.persistence.postgres.connection import get_async_connection
 from app.search.node_projection import (
     NodeProjectionSource,
     NodeSearchProjection,

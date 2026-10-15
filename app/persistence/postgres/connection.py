@@ -1,4 +1,4 @@
-"""Database connection helpers."""
+"""PostgreSQL connection configuration and lifecycle helpers."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from uuid import UUID
 
 import psycopg
 from dotenv import dotenv_values
-from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 
 
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
+DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[3] / ".env.local"
 _async_pool: AsyncConnectionPool | None = None
 
 

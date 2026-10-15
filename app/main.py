@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.db import (
+from app.persistence.postgres.connection import (
     DEFAULT_DEVELOPMENT_WORKSPACE_ID,
     close_async_pool,
     open_async_pool,
@@ -36,7 +36,7 @@ from app.persistence.postgres.canonical_graph import (
 )
 from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
 from app.persistence.postgres.node_neighborhood import PostgresNodeNeighborhoodStore
-from app.persistence.postgres.node_search import PostgresNodeSearchStore
+from app.persistence.postgres.node_search import PostgresNodeSearchRepository
 from app.persistence.postgres.run_graph import PostgresRunGraphStore
 from app.workflows.ingest.enrich_type_specific import TypeSpecificEnrichmentLLM
 from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
@@ -44,7 +44,11 @@ from app.workflows.ingest.groq_chunk_extraction import GroqChunkExtractionLLM
 from app.workflows.ingest.groq_type_specific_enrichment import (
     GroqTypeSpecificEnrichmentLLM,
 )
-from app.search.node_search import NodeSearchMatchKind, NodeSearchStore
+from app.search.node_search import (
+    NodeSearchEngine,
+    NodeSearchMatchKind,
+    NodeSearchStore,
+)
 from app.workflows.ingest.resolve_proposed_subgraph import CanonicalGraphResolverStore
 from app.workflows.ingest.type_specific import displayable_type_specific
 from app.workflows.ingest.types import (
@@ -371,7 +375,10 @@ def get_resolver_store() -> PostgresCanonicalGraphResolverStore:
 def get_node_search_store() -> NodeSearchStore:
     """Return client node search over lexical matches and projection vectors."""
 
-    return PostgresNodeSearchStore(embedder=OllamaEmbeddingEngine())
+    return NodeSearchEngine(
+        repository=PostgresNodeSearchRepository(),
+        embedder=OllamaEmbeddingEngine(),
+    )
 
 
 @lru_cache(maxsize=1)

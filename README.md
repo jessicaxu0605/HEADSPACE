@@ -5,13 +5,14 @@ The repository separates deployable application code from design exploration:
 ```text
 app/                 Python application package
   main.py             API entrypoint and upload/status/retry endpoints
-  db.py               Database engine and session setup
   models.py           Application-owned PostgreSQL models
   storage.py          Local or object-storage helpers
+  embeddings/         Embedding-provider adapters, currently local Ollama
   graph/
     queries/           Graph read contracts and result models
   persistence/
-    postgres/          PostgreSQL implementations of application stores
+    postgres/          PostgreSQL connections and data-access implementations
+  search/              Search orchestration, ranking, and projection logic
   workflows/
     ingest/             Ingestion orchestration, extraction, and resolution steps
   jobs/

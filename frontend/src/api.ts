@@ -118,13 +118,17 @@ export const getNodeNeighborhood = async (
   nodeId: string,
   options: { depth?: number; signal?: AbortSignal } = {},
 ): Promise<NodeNeighborhoodResponse> => {
-  const depth = options.depth ?? 2;
+  const depth = options.depth ?? 1;
   const payload = await requestJson<NodeNeighborhoodResponse>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/graph?depth=${depth}`,
     { signal: options.signal },
   );
 
-  if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+  if (
+    !payload ||
+    !Array.isArray(payload.nodes) ||
+    !Array.isArray(payload.edges)
+  ) {
     throw new Error("The API returned an unexpected response.");
   }
 
@@ -140,7 +144,11 @@ export const getIngestionGraph = async (
     { signal: options.signal },
   );
 
-  if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+  if (
+    !payload ||
+    !Array.isArray(payload.nodes) ||
+    !Array.isArray(payload.edges)
+  ) {
     throw new Error("The API returned an unexpected response.");
   }
 

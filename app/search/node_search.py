@@ -29,11 +29,14 @@ mechanism, for display; the fused score only orders results.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Literal, Protocol, TypeAlias
 from uuid import UUID
 
+from app.search.common import EmbeddingError
 from app.workflows.ingest.types import NodeType, ProposedExternalId
 
 
@@ -59,6 +62,8 @@ MIN_FUSION_DEPTH = 20
 EXACT_MATCH_KINDS: frozenset[str] = frozenset(
     {"external_id", "identifier", "normalized_title"}
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +94,105 @@ class QueryEmbedder(Protocol):
     model: str
 
     async def embed_query(self, text: str) -> list[float]: ...
+
+
+class NodeSearchRepository(Protocol):
+    """Database retrieval needed by client node search."""
+
+    async def search_lexical(
+        self,
+        *,
+        workspace_id: UUID,
+        query: str,
+        node_type: NodeType | None,
+        aliases: list[str],
+        external_ids: list[ProposedExternalId],
+        limit: int,
+        fuzzy_threshold: float,
+    ) -> list[NodeSearchResult]: ...
+
+    async def search_semantic(
+        self,
+        *,
+        workspace_id: UUID,
+        vector: Sequence[float],
+        embedding_model: str,
+        node_type: NodeType | None,
+        limit: int,
+        min_similarity: float,
+    ) -> list[NodeSearchResult]: ...
+
+
+class NodeSearchEngine:
+    """Coordinate lexical and semantic retrieval, then rank their results."""
+
+    def __init__(
+        self,
+        *,
+        repository: NodeSearchRepository,
+        embedder: QueryEmbedder | None = None,
+        fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
+        semantic_threshold: float = DEFAULT_SEMANTIC_THRESHOLD,
+    ) -> None:
+        self.repository = repository
+        self.embedder = embedder
+        self.fuzzy_threshold = fuzzy_threshold
+        self.semantic_threshold = semantic_threshold
+
+    async def search_nodes(
+        self,
+        *,
+        workspace_id: UUID,
+        query: str,
+        node_type: NodeType | None,
+        aliases: list[str],
+        external_ids: list[ProposedExternalId],
+        limit: int,
+    ) -> list[NodeSearchResult]:
+        depth = max(limit * 2, MIN_FUSION_DEPTH)
+        lexical, semantic = await asyncio.gather(
+            self.repository.search_lexical(
+                workspace_id=workspace_id,
+                query=query,
+                node_type=node_type,
+                aliases=aliases,
+                external_ids=external_ids,
+                limit=depth,
+                fuzzy_threshold=self.fuzzy_threshold,
+            ),
+            self._search_semantic(
+                workspace_id=workspace_id,
+                query=query,
+                node_type=node_type,
+                limit=depth,
+            ),
+        )
+        return merge_search_results(lexical, semantic, limit=limit)
+
+    async def _search_semantic(
+        self,
+        *,
+        workspace_id: UUID,
+        query: str,
+        node_type: NodeType | None,
+        limit: int,
+    ) -> list[NodeSearchResult]:
+        if self.embedder is None:
+            return []
+        try:
+            vector = await self.embedder.embed_query(query)
+        except EmbeddingError as exc:
+            logger.warning("Semantic node search unavailable: %s", exc)
+            return []
+        return await self.repository.search_semantic(
+            workspace_id=workspace_id,
+            vector=vector,
+            embedding_model=self.embedder.model,
+            node_type=node_type,
+            # Each node can match through both projections.
+            limit=limit * 2,
+            min_similarity=self.semantic_threshold,
+        )
 
 
 def merge_search_results(

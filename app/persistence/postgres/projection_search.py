@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.db import get_async_connection
+from app.persistence.postgres.connection import get_async_connection
 from app.persistence.postgres.node_projection import vector_literal
 from app.search.node_projection import NODE_PROJECTION_VERSION, ProjectionType
 
