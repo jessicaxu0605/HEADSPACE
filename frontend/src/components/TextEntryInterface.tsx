@@ -59,10 +59,14 @@ export default function TextEntryInterface({
   const [notifications, setNotifications] = useState<SubmissionNotification[]>(
     [],
   );
+  const [closingNotificationIds, setClosingNotificationIds] = useState<
+    Set<string>
+  >(new Set());
   const [showSubmit, setShowSubmit] = useState(false);
   const [scrollFades, setScrollFades] = useState({ up: false, down: false });
   const revealButtonTimeoutRef = useRef<number | undefined>(undefined);
   const autoScrollFrameRef = useRef<number | undefined>(undefined);
+  const dismissTimeoutsRef = useRef<Map<string, number>>(new Map());
   const isMountedRef = useRef(true);
   const keepBottomFadeHiddenRef = useRef(false);
   const hasText = Boolean(content.trim());
@@ -162,6 +166,10 @@ export default function TextEntryInterface({
       if (autoScrollFrameRef.current !== undefined) {
         window.cancelAnimationFrame(autoScrollFrameRef.current);
       }
+      dismissTimeoutsRef.current.forEach((timeoutId) =>
+        window.clearTimeout(timeoutId),
+      );
+      dismissTimeoutsRef.current.clear();
     };
   }, []);
 
@@ -176,8 +184,28 @@ export default function TextEntryInterface({
   };
 
   const dismissNotification = useCallback((id: string): void => {
-    setNotifications((current) =>
-      current.filter((notification) => notification.id !== id),
+    const removeNotification = (): void => {
+      setNotifications((current) =>
+        current.filter((notification) => notification.id !== id),
+      );
+      setClosingNotificationIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      dismissTimeoutsRef.current.delete(id);
+    };
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      removeNotification();
+      return;
+    }
+    if (dismissTimeoutsRef.current.has(id)) return;
+
+    setClosingNotificationIds((current) => new Set(current).add(id));
+    dismissTimeoutsRef.current.set(
+      id,
+      window.setTimeout(removeNotification, 320),
     );
   }, []);
 
@@ -306,10 +334,18 @@ export default function TextEntryInterface({
           <BlurredContainer
             blurredEdges={["top", "right", "bottom", "left"]}
             edgeBlurSize={18}
-            className={`notification ${notification.state}`}
+            className={`notification ${notification.state}${closingNotificationIds.has(notification.id) ? " is-closing" : ""}`}
             key={notification.id}
             role={notification.state === "error" ? "alert" : "status"}
           >
+            <button
+              className="notification-dismiss"
+              type="button"
+              aria-label="Dismiss notification"
+              onClick={() => dismissNotification(notification.id)}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
             <p>
               {notification.state === "pending"
                 ? "committing to memory..."
@@ -317,35 +353,31 @@ export default function TextEntryInterface({
                   ? "your memory is ready!"
                   : notification.message}
             </p>
-            <div className="notification-actions">
-              {notification.state === "success" && notification.runId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const runId = notification.runId;
-                    dismissNotification(notification.id);
-                    if (runId) onViewRun(runId);
-                  }}
-                >
-                  view
-                </button>
-              )}
-              {notification.state === "error" && (
-                <button
-                  type="button"
-                  onClick={() => retrySubmission(notification)}
-                >
-                  retry
-                </button>
-              )}
-              <button
-                type="button"
-                aria-label="Dismiss notification"
-                onClick={() => dismissNotification(notification.id)}
-              >
-                dismiss
-              </button>
-            </div>
+            {(notification.state === "error" ||
+              (notification.state === "success" && notification.runId)) && (
+              <div className="notification-actions">
+                {notification.state === "success" && notification.runId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const runId = notification.runId;
+                      dismissNotification(notification.id);
+                      if (runId) onViewRun(runId);
+                    }}
+                  >
+                    view
+                  </button>
+                )}
+                {notification.state === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => retrySubmission(notification)}
+                  >
+                    retry
+                  </button>
+                )}
+              </div>
+            )}
           </BlurredContainer>
         ))}
       </div>

@@ -58,6 +58,9 @@ export const runGraphToNeighborhood = (
       importance: node.importance,
       confidence: node.confidence,
       distance: 0,
+      aliases: [],
+      external_ids: [],
+      details: [],
     }));
   const edges = run.edges
     .filter((edge) => edge.status !== "deleted")

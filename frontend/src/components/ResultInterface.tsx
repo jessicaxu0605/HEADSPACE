@@ -10,6 +10,7 @@ import type { MemoryNodeReference } from "../memory_graph";
 import BrainLoader from "./BrainLoader";
 import BlurredContainer from "./BlurredContainer";
 import NeighborhoodGraph from "./NeighborhoodGraph";
+import NodeDetails from "./NodeDetails";
 import RelationshipPage from "./RelationshipPage";
 
 type ResultInterfaceProps = {
@@ -186,6 +187,13 @@ export default function ResultInterface({
                   </h2>
                   {startNode?.summary && (
                     <p className="graph-summary">{startNode.summary}</p>
+                  )}
+                  {startNode && (
+                    <NodeDetails
+                      aliases={startNode.aliases}
+                      externalIds={startNode.external_ids}
+                      details={startNode.details}
+                    />
                   )}
                 </>
               )}

@@ -14,11 +14,26 @@ export type MemoryNodeReference = {
   title: string;
 };
 
+// A type-specific field the backend marked as worth showing (a task's due
+// date, a person's pronouns). See TYPE_SPECIFIC_FIELDS in type_specific.py.
+export type MemoryNodeDetail = {
+  name: string;
+  label: string;
+  kind: "text" | "date" | "datetime" | "number" | "enum" | string;
+  value: unknown;
+};
+
+export type MemoryExternalId = { provider: string; external_id: string };
+
 export type MemoryNeighborhoodNode = MemoryNodeReference & {
   summary: string | null;
   importance: number;
   confidence: number;
   distance: number;
+  // Other names for the node, excluding its title and external IDs.
+  aliases: string[];
+  external_ids: MemoryExternalId[];
+  details: MemoryNodeDetail[];
 };
 
 export type MemoryGraphEdge = {

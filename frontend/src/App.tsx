@@ -14,6 +14,7 @@ export default function App() {
   const [searchStatus, setSearchStatus] = useState("");
   const [searchStatusIsError, setSearchStatusIsError] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
   const searchControllerRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const entrySectionRef = useRef<HTMLElement>(null);
@@ -134,6 +135,7 @@ export default function App() {
               query={query}
               searching={searching}
               onQueryChange={handleQueryChange}
+              onFocusChange={setSearchFocused}
               onSearch={() => void handleSearch()}
             />
           )}
@@ -161,13 +163,17 @@ export default function App() {
         </div>
 
         {!isGraphPage && (
-          <button
-            className="text-button continue-button"
-            type="button"
-            onClick={openEntry}
-          >
-            add a thought&nbsp; ↓
-          </button>
+          <div className="continue-wrap">
+            <button
+              className={`text-button continue-button${query && searchFocused ? " is-search-active" : ""}`}
+              type="button"
+              aria-hidden={query && searchFocused ? true : undefined}
+              tabIndex={query && searchFocused ? -1 : undefined}
+              onClick={openEntry}
+            >
+              add a thought&nbsp; ↓
+            </button>
+          </div>
         )}
       </section>
 
