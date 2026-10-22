@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.auth.api import router as auth_router
 from app.persistence.postgres.connection import (
     DEFAULT_DEVELOPMENT_WORKSPACE_ID,
     close_async_pool,
@@ -607,8 +608,9 @@ app.add_middleware(
     allow_origins=_cors_origins(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+app.include_router(auth_router)
 
 
 @app.get("/health", tags=["system"])

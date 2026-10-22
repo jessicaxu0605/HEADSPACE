@@ -6,3 +6,5 @@ python-dotenv>=1,<2
 fastapi>=0.115,<1
 uvicorn[standard]>=0.34,<1
 boto3>=1.35,<2
+PyJWT[crypto]>=2.10,<3
+argon2-cffi>=23,<26

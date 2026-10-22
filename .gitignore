@@ -12,6 +12,7 @@ venv/
 .env.*
 !.env.example
 .storage/
+.secrets/
 
 AGENTS.md
 

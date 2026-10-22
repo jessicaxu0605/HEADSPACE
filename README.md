@@ -85,6 +85,31 @@ The response includes the starting node, every active canonical node reachable w
 > `003_default_development_workspace.sql` provisions it once; API requests do not
 > create or update it.
 
+## Authentication
+
+Local accounts use a case-insensitive `login`, display `name`, and an Argon2id
+password hash. Create an account with `POST /api/v1/auth/users`, then exchange
+its credentials at `POST /api/v1/auth/login`. Login creates a persisted,
+revocable session and returns an RS256-signed JWT. The token and session include
+the user's first active workspace membership, or `null` when the user does not
+yet belong to a workspace. A caller may request a particular active membership
+with `workspace_id` in the login request. `GET /api/v1/auth/session` validates
+both the JWT signature and its current database session.
+
+Generate a persistent RSA keypair for local development and configure the paths
+shown in `.env.example`:
+
+```bash
+mkdir -p .secrets
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+  -out .secrets/auth-jwt-private.pem
+openssl rsa -pubout -in .secrets/auth-jwt-private.pem \
+  -out .secrets/auth-jwt-public.pem
+```
+
+The private key is used only to issue tokens; verification uses the separately
+configured public key. There is intentionally no shared-secret JWT mode.
+
 ## Local embeddings
 
 The embedding provider lives in `app/embeddings/` and uses Ollama's native `/api/embed` endpoint. The default is `nomic-embed-text` (768 dimensions), with the model's `search_document:` and `search_query:` prefixes applied by the adapter. Returned vectors are validated and normalized for cosine-distance search.
