@@ -1,6 +1,7 @@
 import type {
   MemoryEdgeDetail,
   MemoryGraphNeighborhood,
+  MemoryLanding,
   MemoryNodeReference,
   MemoryNodeType,
   MemoryRunGraph,
@@ -165,6 +166,42 @@ export const getEdgeDetail = async (
   );
 
   if (!payload || !payload.from_node || !Array.isArray(payload.evidence)) {
+    throw new Error("The API returned an unexpected response.");
+  }
+
+  return payload;
+};
+
+export const getLandingMemories = async (
+  options: {
+    maxCards?: number;
+    // Recently shown IDs are left out of the draw; open tasks always return.
+    excludeNodeIds?: string[];
+    excludeEdgeIds?: string[];
+    signal?: AbortSignal;
+  } = {},
+): Promise<MemoryLanding> => {
+  const params = new URLSearchParams({
+    max_cards: String(options.maxCards ?? 6),
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+  for (const nodeId of options.excludeNodeIds ?? []) {
+    params.append("exclude_node_ids", nodeId);
+  }
+  for (const edgeId of options.excludeEdgeIds ?? []) {
+    params.append("exclude_edge_ids", edgeId);
+  }
+
+  const payload = await requestJson<MemoryLanding>(
+    `/api/v1/landing?${params.toString()}`,
+    { signal: options.signal },
+  );
+
+  if (
+    !payload ||
+    !Array.isArray(payload.upcoming) ||
+    !Array.isArray(payload.memories)
+  ) {
     throw new Error("The API returned an unexpected response.");
   }
 

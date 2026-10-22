@@ -40,7 +40,6 @@ export default function SearchInterface({
         aria-busy={searching}
         placeholder="pick your brain"
         autoComplete="off"
-        autoFocus
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
         onFocus={() => onFocusChange(true)}

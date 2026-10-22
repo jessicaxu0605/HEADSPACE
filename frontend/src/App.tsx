@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { queryNodes, type NodeQueryMatch } from "./api";
 import ResultInterface from "./components/ResultInterface";
 import SearchInterface from "./components/SearchInterface";
+import SurfacedMemories from "./components/SurfacedMemories";
 import TextEntryInterface from "./components/TextEntryInterface";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
+import type { MemoryNodeReference } from "./memory_graph";
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
@@ -87,10 +89,27 @@ export default function App() {
     setQuery(nextQuery);
   };
 
+  const openNode = (selection: MemoryNodeReference): void => {
+    selectedNodeIdRef.current = selection.node_id;
+    selectedButtonRef.current = null;
+    void graphExplorer.open(selection);
+  };
+
+  const openSurfacedMemory = (selection: MemoryNodeReference): void => {
+    window.scrollTo({ top: 0 });
+    openNode(selection);
+  };
+
   const backToResults = (): void => {
     graphExplorer.close();
+    // Focusing the empty search would hide the surfaced memories, so only
+    // return focus there when search results are showing.
+    const showingSearch = matches.length > 0 || searchStatus !== "";
     window.requestAnimationFrame(() =>
-      (selectedButtonRef.current ?? searchInputRef.current)?.focus(),
+      (
+        selectedButtonRef.current ??
+        (showingSearch ? searchInputRef.current : null)
+      )?.focus(),
     );
   };
 
@@ -123,6 +142,8 @@ export default function App() {
   const isGraphPage = graphExplorer.selection !== null;
   const hideContinueButton =
     (query.length > 0 && searchFocused) || matches.length > 0;
+  const hideSurfacedMemories =
+    searchFocused || matches.length > 0 || searchStatus !== "";
 
   return (
     <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
@@ -131,6 +152,12 @@ export default function App() {
           <h1 id="search-title" className="sr-only">
             Search your headspace
           </h1>
+          {!isGraphPage && (
+            <SurfacedMemories
+              hidden={hideSurfacedMemories}
+              onOpenNode={openSurfacedMemory}
+            />
+          )}
           {!isGraphPage && (
             <SearchInterface
               inputRef={searchInputRef}
@@ -156,11 +183,7 @@ export default function App() {
             selectedNodeIdRef={selectedNodeIdRef}
             onBack={backToResults}
             onExpandNode={(selection) => void graphExplorer.expand(selection)}
-            onOpenNode={(selection) => {
-              selectedNodeIdRef.current = selection.node_id;
-              selectedButtonRef.current = null;
-              void graphExplorer.open(selection);
-            }}
+            onOpenNode={openNode}
           />
         </div>
 

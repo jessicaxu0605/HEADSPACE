@@ -119,3 +119,62 @@ export type MemoryEdgeDetail = {
   to_node: MemoryEdgeEndpoint;
   evidence: MemoryEdgeEvidence[];
 };
+
+// Landing page: GET /api/v1/landing. Each memory is a small subgraph around
+// one anchor node or edge; see app/graph/queries/memory_surfacing.py.
+export type MemoryLandingAnchor = {
+  kind: "node" | "edge";
+  id: string;
+  // Source that chose the anchor, such as "open_tasks" or "on_this_day".
+  reason: string;
+  score: number;
+  // Short display hint, such as "due tomorrow" or "3 years ago today".
+  note: string | null;
+  // Local ISO date the anchor is about, such as a due date or event day.
+  when: string | null;
+};
+
+export type MemoryLandingNode = MemoryNodeReference & {
+  summary: string | null;
+  importance: number;
+  details: MemoryNodeDetail[];
+};
+
+export type MemoryLandingEdge = MemoryGraphEdge & {
+  status: MemoryEdgeStatus;
+  valid_from: string | null;
+  valid_to: string | null;
+  // anchor: the surfaced edge; context: around the anchor; related:
+  // semantically close edge from elsewhere in the graph.
+  role: "anchor" | "context" | "related";
+  similarity: number | null;
+  // "{from} {connector} {to} (details)".
+  sentence: string;
+  evidence: {
+    evidence_id: string;
+    raw_content: string;
+    is_verbatim: boolean;
+    source_type: string;
+    source_created_at: string;
+    annotations: { start: number; length: number; node_id: string }[];
+  } | null;
+};
+
+export type MemoryLandingCard = {
+  anchor: MemoryLandingAnchor;
+  pinned: boolean;
+  // Anchor node (or the anchor edge's endpoints) first.
+  nodes: MemoryLandingNode[];
+  // Anchor edge first, then context, then related edges.
+  edges: MemoryLandingEdge[];
+};
+
+export type MemoryLanding = {
+  generated_at: string;
+  timezone: string;
+  // Unfinished tasks and upcoming events in date order, each with its
+  // adjacent edges and nodes.
+  upcoming: MemoryLandingCard[];
+  // A varied draw of memories.
+  memories: MemoryLandingCard[];
+};
