@@ -20,7 +20,7 @@ from app.auth.tokens import InvalidTokenError, JwtTokenCodec
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 bearer = HTTPBearer(auto_error=False)
-LOGIN_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+LOGIN_PATTERN = re.compile(r"^\S+$")
 
 
 class CreateUserRequest(BaseModel):
@@ -30,7 +30,6 @@ class CreateUserRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=1024)
     birthday: date | None = None
-    gender: str | None = Field(default=None, max_length=100)
     about: str | None = Field(default=None, max_length=2000)
 
     @field_validator("login")
@@ -38,9 +37,7 @@ class CreateUserRequest(BaseModel):
     def validate_login(cls, value: str) -> str:
         value = value.strip()
         if not LOGIN_PATTERN.fullmatch(value):
-            raise ValueError(
-                "login may contain letters, numbers, dots, hyphens, and underscores"
-            )
+            raise ValueError("login must not contain whitespace")
         return value
 
     @field_validator("name")
@@ -51,7 +48,7 @@ class CreateUserRequest(BaseModel):
             raise ValueError("name must not be blank")
         return value
 
-    @field_validator("gender", "about")
+    @field_validator("about")
     @classmethod
     def normalize_optional_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -81,7 +78,6 @@ class UserResponse(BaseModel):
     name: str
     created_at: datetime
     birthday: date | None
-    gender: str | None
     about: str | None
 
     @classmethod
@@ -92,7 +88,6 @@ class UserResponse(BaseModel):
             name=user.name,
             created_at=user.created_at,
             birthday=user.birthday,
-            gender=user.gender,
             about=user.about,
         )
 
@@ -178,7 +173,6 @@ async def create_user(
             name=request.name,
             password=request.password,
             birthday=request.birthday,
-            gender=request.gender,
             about=request.about,
         )
     except LoginAlreadyExistsError as exc:

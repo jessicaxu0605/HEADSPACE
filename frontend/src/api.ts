@@ -35,6 +35,37 @@ export type NodeQueryResponse = {
 
 export type NodeNeighborhoodResponse = MemoryGraphNeighborhood;
 
+export type UserProfile = {
+  id: string;
+  login: string;
+  name: string;
+  birthday: string | null;
+  about: string | null;
+  created_at: string;
+};
+
+export type AuthSession = {
+  id: string;
+  user: UserProfile;
+  active_workspace_id: string | null;
+  created_at: string;
+  expires_at: string;
+};
+
+export type LoginResponse = {
+  access_token: string;
+  token_type: "bearer";
+  session: AuthSession;
+};
+
+export type CreateUserInput = {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  about?: string;
+};
+
 type ApiError = {
   detail?: string | Array<{ msg?: string }>;
   error?: Record<string, unknown> | null;
@@ -47,6 +78,16 @@ if (!configuredApiBaseUrl) {
 }
 
 const apiBaseUrl = configuredApiBaseUrl.replace(/\/$/, "");
+const accessTokenKey = "headspace.access-token";
+
+export const getAccessToken = (): string | null =>
+  window.localStorage.getItem(accessTokenKey);
+
+export const setAccessToken = (token: string): void =>
+  window.localStorage.setItem(accessTokenKey, token);
+
+export const clearAccessToken = (): void =>
+  window.localStorage.removeItem(accessTokenKey);
 
 const errorMessage = (payload: unknown, response: Response): string => {
   if (payload && typeof payload === "object") {
@@ -72,7 +113,12 @@ const requestJson = async <ResponseBody>(
   path: string,
   init?: RequestInit,
 ): Promise<ResponseBody> => {
-  const response = await fetch(`${apiBaseUrl}${path}`, init);
+  const headers = new Headers(init?.headers);
+  const accessToken = getAccessToken();
+  if (accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
+  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, headers });
   const payload = (await response.json().catch(() => null)) as unknown;
 
   if (!response.ok) {
@@ -81,6 +127,40 @@ const requestJson = async <ResponseBody>(
 
   return payload as ResponseBody;
 };
+
+export const createUser = async ({
+  email,
+  password,
+  firstName,
+  lastName,
+  about,
+}: CreateUserInput): Promise<UserProfile> =>
+  requestJson<UserProfile>("/api/v1/auth/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: email.trim().toLowerCase(),
+      password,
+      name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+      about: about?.trim() || null,
+    }),
+  });
+
+export const login = async (
+  email: string,
+  password: string,
+): Promise<LoginResponse> =>
+  requestJson<LoginResponse>("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      login: email.trim().toLowerCase(),
+      password,
+    }),
+  });
+
+export const getCurrentSession = async (): Promise<AuthSession> =>
+  requestJson<AuthSession>("/api/v1/auth/session");
 
 export const createManualIngestion = async (
   content: string,

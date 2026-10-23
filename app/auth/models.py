@@ -14,7 +14,6 @@ class User:
     name: str
     created_at: datetime
     birthday: date | None = None
-    gender: str | None = None
     about: str | None = None
 
 

@@ -37,7 +37,6 @@ class AuthService:
         name: str,
         password: str,
         birthday: date | None = None,
-        gender: str | None = None,
         about: str | None = None,
     ) -> User:
         password_hash = self._passwords.hash(password)
@@ -46,7 +45,6 @@ class AuthService:
             name=name,
             password_hash=password_hash,
             birthday=birthday,
-            gender=gender,
             about=about,
         )
 
@@ -77,7 +75,6 @@ class AuthService:
             name=user.name,
             created_at=user.created_at,
             birthday=user.birthday,
-            gender=user.gender,
             about=user.about,
         )
         authenticated = AuthenticatedSession(public_user, session)

@@ -45,7 +45,7 @@ class FakeAuthStore:
         self.touched: list[UUID] = []
 
     async def create_user(
-        self, *, login, name, password_hash, birthday, gender, about
+        self, *, login, name, password_hash, birthday, about
     ):
         now = datetime.now(UTC)
         user = UserWithPassword(
@@ -54,7 +54,6 @@ class FakeAuthStore:
             name,
             now,
             birthday,
-            gender,
             about,
             password_hash=password_hash,
         )
@@ -65,7 +64,6 @@ class FakeAuthStore:
             user.name,
             user.created_at,
             user.birthday,
-            user.gender,
             user.about,
         )
 
@@ -81,7 +79,6 @@ class FakeAuthStore:
                     user.name,
                     user.created_at,
                     user.birthday,
-                    user.gender,
                     user.about,
                 )
         return None
@@ -133,7 +130,6 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
             name="Jessica Xu",
             password="correct horse battery",
             birthday=date(1995, 4, 12),
-            gender="woman",
             about="Builds memory tools.",
         )
 
@@ -145,7 +141,6 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
             self.passwords.verify(stored.password_hash, "correct horse battery")
         )
         self.assertEqual(user.birthday, date(1995, 4, 12))
-        self.assertEqual(user.gender, "woman")
         self.assertEqual(user.about, "Builds memory tools.")
 
     async def test_login_issues_rs256_token_with_active_workspace(self):
@@ -232,7 +227,6 @@ class FakeApiAuthService:
             kwargs["name"],
             self.user.created_at,
             kwargs["birthday"],
-            kwargs["gender"],
             kwargs["about"],
         )
 
@@ -259,35 +253,45 @@ class AuthApiTests(unittest.TestCase):
         response = client.post(
             "/api/v1/auth/users",
             json={
-                "login": " jessica.xu ",
+                "login": " jessica@example.com ",
                 "name": " Jessica Xu ",
                 "password": "correct horse battery",
                 "birthday": "1995-04-12",
-                "gender": " woman ",
                 "about": " Builds memory tools. ",
             },
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["login"], "jessica.xu")
+        self.assertEqual(response.json()["login"], "jessica@example.com")
         self.assertEqual(
             service.created,
             {
-                "login": "jessica.xu",
+                "login": "jessica@example.com",
                 "name": "Jessica Xu",
                 "password": "correct horse battery",
                 "birthday": date(1995, 4, 12),
-                "gender": "woman",
                 "about": "Builds memory tools.",
             },
         )
         self.assertEqual(response.json()["birthday"], "1995-04-12")
+        self.assertNotIn("gender", response.json())
 
         weak = client.post(
             "/api/v1/auth/users",
             json={"login": "valid", "name": "Name", "password": "too-short"},
         )
         self.assertEqual(weak.status_code, 422)
+
+        gender = client.post(
+            "/api/v1/auth/users",
+            json={
+                "login": "another@example.com",
+                "name": "Another User",
+                "password": "correct horse battery",
+                "gender": "woman",
+            },
+        )
+        self.assertEqual(gender.status_code, 422)
 
     def test_login_and_current_session_endpoints_include_workspace(self):
         service = FakeApiAuthService()

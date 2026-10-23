@@ -22,7 +22,6 @@ def _authenticated() -> AuthenticatedSession:
         name="Jessica Xu",
         created_at=now,
         birthday=date(1995, 4, 12),
-        gender="woman",
         about="Builds memory tools.",
     )
     session = Session(uuid4(), user.id, None, now, now + timedelta(hours=24))

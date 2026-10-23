@@ -88,8 +88,8 @@ The response includes the starting node, every active canonical node reachable w
 ## Authentication
 
 Local accounts use a case-insensitive `login`, display `name`, and an Argon2id
-password hash. Accounts may also store `birthday`, `gender`, and `about` profile
-fields. Create an account with `POST /api/v1/auth/users`, then exchange
+password hash. Accounts may also store `birthday` and `about` profile fields.
+Create an account with `POST /api/v1/auth/users`, then exchange
 its credentials at `POST /api/v1/auth/login`. Login creates a persisted,
 revocable session and returns an RS256-signed JWT. The token and session include
 the user's first active workspace membership, or `null` when the user does not
@@ -118,7 +118,7 @@ configured public key. There is intentionally no shared-secret JWT mode.
 the workspace, adds the caller as an active owner, optionally creates a
 canonical `person` node from the caller's profile, and makes the new workspace
 active on the current session. When requested, the self node uses `about` as
-its summary, stores birthday and gender as person details, receives a stable
+its summary, stores birthday as a person detail, receives a stable
 `headspace_user` external ID, and is queued for search projection rebuilding.
 
 Because the active-workspace claim changes, the response includes a replacement

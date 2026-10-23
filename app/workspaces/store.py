@@ -77,8 +77,6 @@ class PostgresWorkspaceStore:
                     profile = {}
                     if user.birthday is not None:
                         profile["birthday"] = user.birthday.isoformat()
-                    if user.gender is not None:
-                        profile["gender"] = user.gender
                     node_row = await (
                         await conn.execute(
                             """

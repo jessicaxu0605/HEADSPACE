@@ -24,7 +24,6 @@ class AuthStore(Protocol):
         name: str,
         password_hash: str,
         birthday: date | None,
-        gender: str | None,
         about: str | None,
     ) -> User: ...
 
@@ -52,7 +51,6 @@ def _user(row) -> User:
         name=row["name"],
         created_at=row["created_at"],
         birthday=row["birthday"],
-        gender=row["gender"],
         about=row["about"],
     )
 
@@ -76,7 +74,6 @@ class PostgresAuthStore:
         name: str,
         password_hash: str,
         birthday: date | None,
-        gender: str | None,
         about: str | None,
     ) -> User:
         try:
@@ -86,13 +83,13 @@ class PostgresAuthStore:
                         """
                         INSERT INTO users (
                             login, name, password_hash, display_name,
-                            birthday, gender, about
+                            birthday, about
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s)
                         RETURNING id, login, name, created_at,
-                                  birthday, gender, about
+                                  birthday, about
                         """,
-                        (login, name, password_hash, name, birthday, gender, about),
+                        (login, name, password_hash, name, birthday, about),
                     )
                 ).fetchone()
         except UniqueViolation as exc:
@@ -106,7 +103,7 @@ class PostgresAuthStore:
                 await conn.execute(
                     """
                     SELECT id, login, name, password_hash, created_at,
-                           birthday, gender, about
+                           birthday, about
                     FROM users
                     WHERE lower(login) = lower(%s) AND deleted_at IS NULL
                     """,
@@ -121,7 +118,6 @@ class PostgresAuthStore:
             name=row["name"],
             created_at=row["created_at"],
             birthday=row["birthday"],
-            gender=row["gender"],
             about=row["about"],
             password_hash=row["password_hash"],
         )
@@ -131,7 +127,7 @@ class PostgresAuthStore:
             row = await (
                 await conn.execute(
                     """
-                    SELECT id, login, name, created_at, birthday, gender, about
+                    SELECT id, login, name, created_at, birthday, about
                     FROM users
                     WHERE id = %s AND deleted_at IS NULL
                     """,

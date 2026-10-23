@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { queryNodes, type NodeQueryMatch } from "./api";
+import {
+  clearAccessToken,
+  getAccessToken,
+  getCurrentSession,
+  queryNodes,
+  type NodeQueryMatch,
+} from "./api";
+import AuthFlow from "./components/AuthFlow";
 import ResultInterface from "./components/ResultInterface";
 import SearchInterface from "./components/SearchInterface";
 import SurfacedMemories from "./components/SurfacedMemories";
@@ -11,6 +18,53 @@ const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
 
 export default function App() {
+  const [authStatus, setAuthStatus] = useState<
+    "checking" | "authenticated" | "unauthenticated"
+  >("checking");
+
+  useEffect(() => {
+    if (!getAccessToken()) {
+      setAuthStatus("unauthenticated");
+      return;
+    }
+    let active = true;
+    void getCurrentSession()
+      .then(() => {
+        if (active) setAuthStatus("authenticated");
+      })
+      .catch(() => {
+        clearAccessToken();
+        if (active) setAuthStatus("unauthenticated");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (authStatus === "checking") {
+    return (
+      <main className="auth-shell auth-checking" aria-label="Loading your headspace">
+        <div className="auth-brand">headspace</div>
+        <p>opening your headspace…</p>
+      </main>
+    );
+  }
+
+  if (authStatus === "unauthenticated") {
+    return <AuthFlow onAuthenticated={() => setAuthStatus("authenticated")} />;
+  }
+
+  return (
+    <AuthenticatedApp
+      onLogout={() => {
+        clearAccessToken();
+        setAuthStatus("unauthenticated");
+      }}
+    />
+  );
+}
+
+function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<NodeQueryMatch[]>([]);
   const [searchStatus, setSearchStatus] = useState("");
@@ -147,6 +201,9 @@ export default function App() {
 
   return (
     <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
+      <button className="session-logout" type="button" onClick={onLogout}>
+        log out
+      </button>
       <section className="landing screen" aria-labelledby="search-title">
         <div className="search-wrap">
           <h1 id="search-title" className="sr-only">
