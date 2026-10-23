@@ -368,6 +368,10 @@ def _profile_facts(node_type: str, name: str, details: dict[str, Any]) -> list[s
 
     facts: list[str] = []
     if node_type == "person":
+        if details.get("birthday"):
+            facts.append(f"Birthday: {clean(details['birthday'])}.")
+        if details.get("gender"):
+            facts.append(f"Gender: {clean(details['gender'])}.")
         if details.get("relationship_context"):
             facts.append(
                 as_sentence(f"Relationship: {clean(details['relationship_context'])}")

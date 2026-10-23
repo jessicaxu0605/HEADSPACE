@@ -49,6 +49,22 @@ class TypeSpecificField:
 TYPE_SPECIFIC_FIELDS: dict[str, tuple[TypeSpecificField, ...]] = {
     "person": (
         TypeSpecificField(
+            "birthday",
+            "date",
+            "The person's birthday in YYYY-MM-DD form.",
+            extractable=False,
+            display=True,
+            label="birthday",
+        ),
+        TypeSpecificField(
+            "gender",
+            "text",
+            "The person's self-described gender.",
+            extractable=False,
+            display=True,
+            label="gender",
+        ),
+        TypeSpecificField(
             "email", "email", "Email address.", external_id_provider="email"
         ),
         TypeSpecificField(

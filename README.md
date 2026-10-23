@@ -88,7 +88,8 @@ The response includes the starting node, every active canonical node reachable w
 ## Authentication
 
 Local accounts use a case-insensitive `login`, display `name`, and an Argon2id
-password hash. Create an account with `POST /api/v1/auth/users`, then exchange
+password hash. Accounts may also store `birthday`, `gender`, and `about` profile
+fields. Create an account with `POST /api/v1/auth/users`, then exchange
 its credentials at `POST /api/v1/auth/login`. Login creates a persisted,
 revocable session and returns an RS256-signed JWT. The token and session include
 the user's first active workspace membership, or `null` when the user does not
@@ -109,6 +110,20 @@ openssl rsa -pubout -in .secrets/auth-jwt-private.pem \
 
 The private key is used only to issue tokens; verification uses the separately
 configured public key. There is intentionally no shared-secret JWT mode.
+
+### Workspace creation
+
+`POST /api/v1/workspaces` requires a bearer token and accepts a workspace
+`name` plus `create_self_node` (default `false`). Creation is atomic: it creates
+the workspace, adds the caller as an active owner, optionally creates a
+canonical `person` node from the caller's profile, and makes the new workspace
+active on the current session. When requested, the self node uses `about` as
+its summary, stores birthday and gender as person details, receives a stable
+`headspace_user` external ID, and is queued for search projection rebuilding.
+
+Because the active-workspace claim changes, the response includes a replacement
+RS256 access token. Clients must use that token for subsequent authenticated
+requests; the previous token is invalidated by the session/workspace mismatch.
 
 ## Local embeddings
 

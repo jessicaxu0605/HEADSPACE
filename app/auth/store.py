@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -18,7 +18,14 @@ class LoginAlreadyExistsError(ValueError):
 
 class AuthStore(Protocol):
     async def create_user(
-        self, *, login: str, name: str, password_hash: str
+        self,
+        *,
+        login: str,
+        name: str,
+        password_hash: str,
+        birthday: date | None,
+        gender: str | None,
+        about: str | None,
     ) -> User: ...
 
     async def get_user_by_login(self, *, login: str) -> UserWithPassword | None: ...
@@ -39,7 +46,15 @@ class AuthStore(Protocol):
 
 
 def _user(row) -> User:
-    return User(row["id"], row["login"], row["name"], row["created_at"])
+    return User(
+        id=row["id"],
+        login=row["login"],
+        name=row["name"],
+        created_at=row["created_at"],
+        birthday=row["birthday"],
+        gender=row["gender"],
+        about=row["about"],
+    )
 
 
 def _session(row) -> Session:
@@ -55,18 +70,29 @@ def _session(row) -> Session:
 
 class PostgresAuthStore:
     async def create_user(
-        self, *, login: str, name: str, password_hash: str
+        self,
+        *,
+        login: str,
+        name: str,
+        password_hash: str,
+        birthday: date | None,
+        gender: str | None,
+        about: str | None,
     ) -> User:
         try:
             async with get_async_connection() as conn:
                 row = await (
                     await conn.execute(
                         """
-                        INSERT INTO users (login, name, password_hash, display_name)
-                        VALUES (%s, %s, %s, %s)
-                        RETURNING id, login, name, created_at
+                        INSERT INTO users (
+                            login, name, password_hash, display_name,
+                            birthday, gender, about
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id, login, name, created_at,
+                                  birthday, gender, about
                         """,
-                        (login, name, password_hash, name),
+                        (login, name, password_hash, name, birthday, gender, about),
                     )
                 ).fetchone()
         except UniqueViolation as exc:
@@ -79,7 +105,8 @@ class PostgresAuthStore:
             row = await (
                 await conn.execute(
                     """
-                    SELECT id, login, name, password_hash, created_at
+                    SELECT id, login, name, password_hash, created_at,
+                           birthday, gender, about
                     FROM users
                     WHERE lower(login) = lower(%s) AND deleted_at IS NULL
                     """,
@@ -93,6 +120,9 @@ class PostgresAuthStore:
             login=row["login"],
             name=row["name"],
             created_at=row["created_at"],
+            birthday=row["birthday"],
+            gender=row["gender"],
+            about=row["about"],
             password_hash=row["password_hash"],
         )
 
@@ -101,7 +131,7 @@ class PostgresAuthStore:
             row = await (
                 await conn.execute(
                     """
-                    SELECT id, login, name, created_at
+                    SELECT id, login, name, created_at, birthday, gender, about
                     FROM users
                     WHERE id = %s AND deleted_at IS NULL
                     """,

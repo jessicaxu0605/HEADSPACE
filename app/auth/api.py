@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from functools import lru_cache
 from uuid import UUID
 
@@ -29,6 +29,9 @@ class CreateUserRequest(BaseModel):
     login: str = Field(min_length=3, max_length=100)
     name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=1024)
+    birthday: date | None = None
+    gender: str | None = Field(default=None, max_length=100)
+    about: str | None = Field(default=None, max_length=2000)
 
     @field_validator("login")
     @classmethod
@@ -47,6 +50,13 @@ class CreateUserRequest(BaseModel):
         if not value:
             raise ValueError("name must not be blank")
         return value
+
+    @field_validator("gender", "about")
+    @classmethod
+    def normalize_optional_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class LoginRequest(BaseModel):
@@ -70,6 +80,9 @@ class UserResponse(BaseModel):
     login: str
     name: str
     created_at: datetime
+    birthday: date | None
+    gender: str | None
+    about: str | None
 
     @classmethod
     def from_user(cls, user: User) -> "UserResponse":
@@ -78,6 +91,9 @@ class UserResponse(BaseModel):
             login=user.login,
             name=user.name,
             created_at=user.created_at,
+            birthday=user.birthday,
+            gender=user.gender,
+            about=user.about,
         )
 
 
@@ -123,18 +139,24 @@ def get_auth_service() -> AuthService:
     )
 
 
-async def get_current_session(
+async def require_bearer_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
-    service: AuthService = Depends(get_auth_service),
-) -> AuthenticatedSession:
+) -> str:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Bearer access token required.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return credentials.credentials
+
+
+async def get_current_session(
+    token: str = Depends(require_bearer_token),
+    service: AuthService = Depends(get_auth_service),
+) -> AuthenticatedSession:
     try:
-        return await service.authenticate(credentials.credentials)
+        return await service.authenticate(token)
     except InvalidTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -152,7 +174,12 @@ async def create_user(
 ) -> UserResponse:
     try:
         user = await service.create_user(
-            login=request.login, name=request.name, password=request.password
+            login=request.login,
+            name=request.name,
+            password=request.password,
+            birthday=request.birthday,
+            gender=request.gender,
+            about=request.about,
         )
     except LoginAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 
@@ -13,9 +13,12 @@ class User:
     login: str
     name: str
     created_at: datetime
+    birthday: date | None = None
+    gender: str | None = None
+    about: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class UserWithPassword(User):
     password_hash: str
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 import jwt
@@ -44,11 +44,30 @@ class FakeAuthStore:
         self.workspace_id: UUID | None = None
         self.touched: list[UUID] = []
 
-    async def create_user(self, *, login, name, password_hash):
+    async def create_user(
+        self, *, login, name, password_hash, birthday, gender, about
+    ):
         now = datetime.now(UTC)
-        user = UserWithPassword(uuid4(), login, name, now, password_hash)
+        user = UserWithPassword(
+            uuid4(),
+            login,
+            name,
+            now,
+            birthday,
+            gender,
+            about,
+            password_hash=password_hash,
+        )
         self.users_by_login[login.casefold()] = user
-        return User(user.id, user.login, user.name, user.created_at)
+        return User(
+            user.id,
+            user.login,
+            user.name,
+            user.created_at,
+            user.birthday,
+            user.gender,
+            user.about,
+        )
 
     async def get_user_by_login(self, *, login):
         return self.users_by_login.get(login.casefold())
@@ -56,7 +75,15 @@ class FakeAuthStore:
     async def get_user(self, *, user_id):
         for user in self.users_by_login.values():
             if user.id == user_id:
-                return User(user.id, user.login, user.name, user.created_at)
+                return User(
+                    user.id,
+                    user.login,
+                    user.name,
+                    user.created_at,
+                    user.birthday,
+                    user.gender,
+                    user.about,
+                )
         return None
 
     async def create_session(
@@ -102,7 +129,12 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_creates_user_with_argon2_hash_and_never_stores_password(self):
         user = await self.service.create_user(
-            login="jessica", name="Jessica Xu", password="correct horse battery"
+            login="jessica",
+            name="Jessica Xu",
+            password="correct horse battery",
+            birthday=date(1995, 4, 12),
+            gender="woman",
+            about="Builds memory tools.",
         )
 
         stored = self.store.users_by_login["jessica"]
@@ -112,6 +144,9 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             self.passwords.verify(stored.password_hash, "correct horse battery")
         )
+        self.assertEqual(user.birthday, date(1995, 4, 12))
+        self.assertEqual(user.gender, "woman")
+        self.assertEqual(user.about, "Builds memory tools.")
 
     async def test_login_issues_rs256_token_with_active_workspace(self):
         workspace_id = uuid4()
@@ -196,6 +231,9 @@ class FakeApiAuthService:
             kwargs["login"],
             kwargs["name"],
             self.user.created_at,
+            kwargs["birthday"],
+            kwargs["gender"],
+            kwargs["about"],
         )
 
     async def login(self, **kwargs):
@@ -224,6 +262,9 @@ class AuthApiTests(unittest.TestCase):
                 "login": " jessica.xu ",
                 "name": " Jessica Xu ",
                 "password": "correct horse battery",
+                "birthday": "1995-04-12",
+                "gender": " woman ",
+                "about": " Builds memory tools. ",
             },
         )
 
@@ -235,8 +276,12 @@ class AuthApiTests(unittest.TestCase):
                 "login": "jessica.xu",
                 "name": "Jessica Xu",
                 "password": "correct horse battery",
+                "birthday": date(1995, 4, 12),
+                "gender": "woman",
+                "about": "Builds memory tools.",
             },
         )
+        self.assertEqual(response.json()["birthday"], "1995-04-12")
 
         weak = client.post(
             "/api/v1/auth/users",

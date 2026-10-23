@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from app.auth.models import AuthenticatedSession, IssuedSession, User
@@ -30,10 +30,24 @@ class AuthService:
         # verification path as valid accounts to reduce login enumeration.
         self._dummy_password_hash = passwords.hash("not-a-real-user-password")
 
-    async def create_user(self, *, login: str, name: str, password: str) -> User:
+    async def create_user(
+        self,
+        *,
+        login: str,
+        name: str,
+        password: str,
+        birthday: date | None = None,
+        gender: str | None = None,
+        about: str | None = None,
+    ) -> User:
         password_hash = self._passwords.hash(password)
         return await self._store.create_user(
-            login=login, name=name, password_hash=password_hash
+            login=login,
+            name=name,
+            password_hash=password_hash,
+            birthday=birthday,
+            gender=gender,
+            about=about,
         )
 
     async def login(
@@ -57,7 +71,15 @@ class AuthService:
             requested_workspace_id=workspace_id,
             expires_at=session_expiry(),
         )
-        public_user = User(user.id, user.login, user.name, user.created_at)
+        public_user = User(
+            id=user.id,
+            login=user.login,
+            name=user.name,
+            created_at=user.created_at,
+            birthday=user.birthday,
+            gender=user.gender,
+            about=user.about,
+        )
         authenticated = AuthenticatedSession(public_user, session)
         return IssuedSession(authenticated, self._tokens.encode(session))
 

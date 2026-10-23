@@ -19,11 +19,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth.api import router as auth_router
-from app.persistence.postgres.connection import (
-    DEFAULT_DEVELOPMENT_WORKSPACE_ID,
-    close_async_pool,
-    open_async_pool,
-)
 from app.embeddings import OllamaEmbeddingEngine
 from app.graph.queries.edge_detail import EdgeDetailStore, EdgeStatus
 from app.graph.queries.memory_surfacing import (
@@ -43,6 +38,11 @@ from app.graph.queries.run_graph import (
 from app.persistence.postgres.canonical_graph import (
     PostgresCanonicalGraphResolverStore,
     load_active_relation_types,
+)
+from app.persistence.postgres.connection import (
+    DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+    close_async_pool,
+    open_async_pool,
 )
 from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
 from app.persistence.postgres.memory_surfacing import (
@@ -76,6 +76,7 @@ from app.workflows.ingest.workflow import (
     get_ingestion_run,
     ingest_content,
 )
+from app.workspaces.api import router as workspace_router
 
 
 SupportedApiSourceType = Literal["manual_entry", "email", "calendar_event"]
@@ -611,6 +612,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 app.include_router(auth_router)
+app.include_router(workspace_router)
 
 
 @app.get("/health", tags=["system"])

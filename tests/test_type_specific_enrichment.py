@@ -78,13 +78,19 @@ class TypeSpecificFieldTests(unittest.TestCase):
             normalize_type_specific(
                 "person",
                 {
+                    "birthday": "1995-04-12",
+                    "gender": " woman ",
                     "pronouns": " she/her ",
                     "display_name": "Sarah",
                     "favourite_colour": "green",
                     "relationship_context": "",
                 },
             ),
-            {"pronouns": "she/her"},
+            {
+                "birthday": "1995-04-12",
+                "gender": "woman",
+                "pronouns": "she/her",
+            },
         )
         self.assertIsNone(
             normalize_type_specific("task", {"task_status": "someday"})
