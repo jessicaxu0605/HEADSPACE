@@ -1,6 +1,8 @@
-"""Workspace creation and membership listing."""
+"""Workspace creation, membership listing, and last-used tracking."""
 
 from __future__ import annotations
+
+from uuid import UUID
 
 from app.auth.models import AuthenticatedSession
 from app.workspaces.models import CreatedWorkspace, MemberWorkspace
@@ -31,4 +33,14 @@ class WorkspaceService:
     ) -> list[MemberWorkspace]:
         return await self._store.list_member_workspaces(
             user_id=authenticated.user.id
+        )
+
+    async def mark_last_used(
+        self,
+        *,
+        authenticated: AuthenticatedSession,
+        workspace_id: UUID,
+    ) -> bool:
+        return await self._store.mark_last_used(
+            workspace_id=workspace_id, user_id=authenticated.user.id
         )

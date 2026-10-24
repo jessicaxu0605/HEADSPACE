@@ -248,19 +248,32 @@ export const logout = async (): Promise<void> => {
   await requestJson<null>("/api/v1/auth/logout", { method: "POST" });
 };
 
+export type WorkspaceList = {
+  workspaces: Workspace[];
+  last_used_workspace_id: string | null;
+};
+
 export const listWorkspaces = async (
   options: { signal?: AbortSignal } = {},
-): Promise<Workspace[]> => {
-  const payload = await requestJson<{ workspaces: Workspace[] }>(
-    "/api/v1/workspaces",
-    { signal: options.signal },
-  );
+): Promise<WorkspaceList> => {
+  const payload = await requestJson<WorkspaceList>("/api/v1/workspaces", {
+    signal: options.signal,
+  });
 
   if (!payload || !Array.isArray(payload.workspaces)) {
     throw new Error("The API returned an unexpected response.");
   }
 
-  return payload.workspaces;
+  return payload;
+};
+
+// Remembers the workspace on the server, so the next visit on any device
+// opens it without asking.
+export const markWorkspaceLastUsed = async (workspaceId: string): Promise<void> => {
+  await requestJson<null>(
+    `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/last-used`,
+    { method: "PUT" },
+  );
 };
 
 export const createManualIngestion = async (

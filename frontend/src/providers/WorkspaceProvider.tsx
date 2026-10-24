@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   listWorkspaces,
+  markWorkspaceLastUsed,
   subscribeWorkspaceAccessDenied,
   type Workspace,
   type WorkspaceRole,
@@ -44,54 +45,24 @@ type LoadedWorkspaces = {
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
 const ActiveWorkspaceContext = createContext<ActiveWorkspace | null>(null);
 
-// The last workspace is remembered per user so a shared browser never carries
-// one account's choice into another.
-const rememberedWorkspaceKey = (userId: string): string =>
-  `headspace.workspace.${userId}`;
-
-const readRememberedWorkspace = (userId: string): string | null => {
-  try {
-    return window.localStorage.getItem(rememberedWorkspaceKey(userId));
-  } catch {
-    return null;
-  }
-};
-
-const rememberWorkspace = (userId: string, workspaceId: string | null): void => {
-  try {
-    if (workspaceId === null) {
-      window.localStorage.removeItem(rememberedWorkspaceKey(userId));
-    } else {
-      window.localStorage.setItem(rememberedWorkspaceKey(userId), workspaceId);
-    }
-  } catch {
-    // Without storage the user picks a workspace on each visit.
-  }
-};
-
-// Keep the current choice if it is still available, then the remembered one.
-// A session fresh from signup opens the default workspace created with the
-// account (its only membership) for the tutorial; otherwise null asks the
-// user to pick.
+// Keep the current choice if it is still available, then the one the server
+// remembers as last used (signup marks the default workspace, so a new account
+// opens straight into it). Otherwise null asks the user to pick.
 const chooseWorkspace = (
-  userId: string,
   workspaces: Workspace[],
   currentId: string | null,
-  newAccount: boolean,
+  lastUsedId: string | null,
 ): string | null => {
   const available = new Set(workspaces.map((workspace) => workspace.id));
-  const rememberedId = readRememberedWorkspace(userId);
-  const activeId =
-    [currentId, rememberedId].find((id) => id !== null && available.has(id)) ??
-    (newAccount ? (workspaces[0]?.id ?? null) : null);
-  rememberWorkspace(userId, activeId);
-  return activeId;
+  return (
+    [currentId, lastUsedId].find((id) => id !== null && available.has(id)) ??
+    null
+  );
 };
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const userId = session.status === "signed-in" ? session.user.id : null;
-  const newAccount = session.status === "signed-in" && session.newAccount;
   const [loaded, setLoaded] = useState<LoadedWorkspaces | null>(null);
   const [failure, setFailure] = useState<{ userId: string; message: string } | null>(
     null,
@@ -106,15 +77,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
     const request = new AbortController();
     listWorkspaces({ signal: request.signal })
-      .then((workspaces) => {
+      .then(({ workspaces, last_used_workspace_id }) => {
         setLoaded((current) => ({
           userId,
           workspaces,
           activeId: chooseWorkspace(
-            userId,
             workspaces,
             current?.userId === userId ? current.activeId : null,
-            newAccount,
+            last_used_workspace_id,
           ),
         }));
         setFailure(null);
@@ -126,7 +96,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setFailure({ userId, message });
       });
     return () => request.abort();
-  }, [newAccount, reloadCount, userId]);
+  }, [reloadCount, userId]);
 
   const activeId = loaded?.userId === userId ? loaded.activeId : null;
 
@@ -146,20 +116,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const switchWorkspace = useCallback(
     (workspaceId: string): void => {
-      if (userId === null) return;
-      setLoaded((current) => {
-        if (
-          !current ||
-          current.userId !== userId ||
-          !current.workspaces.some((workspace) => workspace.id === workspaceId)
-        ) {
-          return current;
-        }
-        rememberWorkspace(userId, workspaceId);
-        return { ...current, activeId: workspaceId };
-      });
+      if (
+        loaded === null ||
+        loaded.userId !== userId ||
+        !loaded.workspaces.some((workspace) => workspace.id === workspaceId)
+      ) {
+        return;
+      }
+      setLoaded({ ...loaded, activeId: workspaceId });
+      // Opening the workspace does not wait on this; if it fails, the next
+      // visit just falls back to the previous choice or the selection page.
+      void markWorkspaceLastUsed(workspaceId).catch(() => undefined);
     },
-    [userId],
+    [loaded, userId],
   );
 
   const state = useMemo<WorkspaceState>(() => {

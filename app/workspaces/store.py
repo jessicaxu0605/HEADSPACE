@@ -34,6 +34,8 @@ class WorkspaceStore(Protocol):
         user_id: UUID,
     ) -> list[MemberWorkspace]: ...
 
+    async def mark_last_used(self, *, workspace_id: UUID, user_id: UUID) -> bool: ...
+
 
 class WorkspaceMembershipStore(Protocol):
     async def get_active_membership(
@@ -50,11 +52,13 @@ async def insert_workspace(
     user: User,
     name: str,
     create_self_node: bool,
+    mark_last_used: bool = False,
 ) -> CreatedWorkspace:
     """Create a workspace owned by ``user`` inside the caller's transaction.
 
     Signup uses this to create a user's default workspace atomically with the
-    account; the workspace API uses it for additional workspaces.
+    account, marked as last used so the first login opens it; the workspace
+    API uses it for additional workspaces.
     """
 
     workspace_row = await (
@@ -74,12 +78,12 @@ async def insert_workspace(
         await conn.execute(
             """
             INSERT INTO workspace_member (
-                workspace_id, user_id, role, joined_at
+                workspace_id, user_id, role, joined_at, last_used_at
             )
-            VALUES (%s, %s, 'owner', now())
+            VALUES (%s, %s, 'owner', now(), CASE WHEN %s THEN now() END)
             RETURNING role
             """,
-            (workspace_id, user.id),
+            (workspace_id, user.id, mark_last_used),
         )
     ).fetchone()
     assert member_row is not None
@@ -168,7 +172,7 @@ class PostgresWorkspaceStore:
                 await conn.execute(
                     """
                     SELECT w.id, w.name, w.created_by_user_id, w.created_at,
-                           wm.role
+                           wm.role, wm.last_used_at
                     FROM workspace_member AS wm
                     JOIN workspaces AS w
                       ON w.id = wm.workspace_id AND w.deleted_at IS NULL
@@ -188,9 +192,29 @@ class PostgresWorkspaceStore:
                     created_at=row["created_at"],
                 ),
                 role=cast(WorkspaceRole, row["role"]),
+                last_used_at=row["last_used_at"],
             )
             for row in rows
         ]
+
+    async def mark_last_used(self, *, workspace_id: UUID, user_id: UUID) -> bool:
+        """Record that the user opened this workspace; False without access."""
+
+        async with get_async_connection() as conn:
+            cursor = await conn.execute(
+                """
+                UPDATE workspace_member AS wm
+                SET last_used_at = now()
+                FROM workspaces AS w
+                WHERE wm.workspace_id = %s
+                  AND wm.user_id = %s
+                  AND wm.removed_at IS NULL
+                  AND w.id = wm.workspace_id
+                  AND w.deleted_at IS NULL
+                """,
+                (workspace_id, user_id),
+            )
+        return cursor.rowcount > 0
 
 
 class PostgresWorkspaceMembershipStore:

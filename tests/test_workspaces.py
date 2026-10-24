@@ -43,6 +43,7 @@ class FakeWorkspaceStore:
     def __init__(self, member_workspaces: list[MemberWorkspace] | None = None) -> None:
         self.call = None
         self.list_call = None
+        self.mark_call = None
         self.member_workspaces = member_workspaces or []
 
     async def create_workspace(self, **kwargs):
@@ -62,6 +63,13 @@ class FakeWorkspaceStore:
     async def list_member_workspaces(self, **kwargs):
         self.list_call = kwargs
         return self.member_workspaces
+
+    async def mark_last_used(self, **kwargs):
+        self.mark_call = kwargs
+        return any(
+            item.workspace.id == kwargs["workspace_id"]
+            for item in self.member_workspaces
+        )
 
 
 class WorkspaceServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -144,6 +152,60 @@ class WorkspaceApiTests(unittest.TestCase):
         self.assertEqual(
             workspaces[1]["created_by_user_id"], str(shared.created_by_user_id)
         )
+        self.assertIsNone(response.json()["last_used_workspace_id"])
+
+    def test_lists_most_recently_used_workspace(self):
+        authenticated = _authenticated()
+        now = datetime.now(UTC)
+        older = MemberWorkspace(_workspace("Personal"), "owner", now - timedelta(days=1))
+        newer = MemberWorkspace(_workspace("Family"), "viewer", now)
+        unused = MemberWorkspace(_workspace("Work"), "editor")
+        store = FakeWorkspaceStore([older, newer, unused])
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).get("/api/v1/workspaces")
+
+        self.assertEqual(
+            response.json()["last_used_workspace_id"], str(newer.workspace.id)
+        )
+        self.assertNotIn("last_used_at", response.json()["workspaces"][0])
+
+    def test_marks_member_workspace_as_last_used(self):
+        authenticated = _authenticated()
+        workspace = _workspace("Family")
+        store = FakeWorkspaceStore([MemberWorkspace(workspace, "viewer")])
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).put(f"/api/v1/workspaces/{workspace.id}/last-used")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            store.mark_call,
+            {"workspace_id": workspace.id, "user_id": authenticated.user.id},
+        )
+
+    def test_rejects_marking_a_workspace_without_membership(self):
+        authenticated = _authenticated()
+        store = FakeWorkspaceStore()
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).put(f"/api/v1/workspaces/{uuid4()}/last-used")
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_rejects_unauthenticated_last_used_update(self):
+        response = TestClient(app).put(f"/api/v1/workspaces/{uuid4()}/last-used")
+
+        self.assertEqual(response.status_code, 401)
 
     def test_rejects_unauthenticated_workspace_listing(self):
         response = TestClient(app).get("/api/v1/workspaces")
@@ -169,6 +231,7 @@ class PostgresWorkspaceStoreTests(unittest.IsolatedAsyncioTestCase):
                 "created_by_user_id": workspace.created_by_user_id,
                 "created_at": workspace.created_at,
                 "role": "editor",
+                "last_used_at": None,
             }
         ]
 

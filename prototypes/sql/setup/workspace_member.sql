@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS workspace_member (
   role text NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
   joined_at timestamptz,
   removed_at timestamptz,
+  last_used_at timestamptz,
   PRIMARY KEY (workspace_id, user_id)
 );
 

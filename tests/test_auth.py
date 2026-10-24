@@ -216,6 +216,7 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(kwargs["user"].id, user_row["id"])
             self.assertEqual(kwargs["name"], "Personal")
             self.assertTrue(kwargs["create_self_node"])
+            self.assertTrue(kwargs["mark_last_used"])
 
         with patch(
             "app.auth.store.get_async_connection",

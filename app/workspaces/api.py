@@ -6,7 +6,7 @@ from datetime import datetime
 from functools import lru_cache
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth.api import get_current_session
@@ -81,6 +81,8 @@ class CreateWorkspaceResponse(BaseModel):
 
 class WorkspaceListResponse(BaseModel):
     workspaces: list[WorkspaceResponse]
+    # The listed workspace the caller opened most recently, if any.
+    last_used_workspace_id: UUID | None
 
 
 @lru_cache(maxsize=1)
@@ -112,9 +114,32 @@ async def list_workspaces(
     """List the workspaces the current user is an active member of."""
 
     member_workspaces = await service.list_workspaces(authenticated=authenticated)
+    used = [item for item in member_workspaces if item.last_used_at is not None]
+    last_used = max(used, key=lambda item: item.last_used_at, default=None)
     return WorkspaceListResponse(
         workspaces=[
             WorkspaceResponse.from_member_workspace(member_workspace)
             for member_workspace in member_workspaces
-        ]
+        ],
+        last_used_workspace_id=last_used.workspace.id if last_used else None,
     )
+
+
+@router.put(
+    "/{workspace_id}/last-used", status_code=status.HTTP_204_NO_CONTENT
+)
+async def mark_workspace_last_used(
+    workspace_id: UUID,
+    authenticated: AuthenticatedSession = Depends(get_current_session),
+    service: WorkspaceService = Depends(get_workspace_service),
+) -> Response:
+    """Remember this workspace as the one the current user opened last."""
+
+    if not await service.mark_last_used(
+        authenticated=authenticated, workspace_id=workspace_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active workspace membership required.",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -104,6 +104,7 @@ class PostgresAuthStore:
                         user=user,
                         name=DEFAULT_WORKSPACE_NAME,
                         create_self_node=True,
+                        mark_last_used=True,
                     )
         except UniqueViolation as exc:
             raise EmailAlreadyExistsError("Email is already in use.") from exc

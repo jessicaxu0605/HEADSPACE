@@ -32,6 +32,7 @@ class MemberWorkspace:
 
     workspace: Workspace
     role: WorkspaceRole
+    last_used_at: datetime | None = None
 
 
 @dataclass(frozen=True)

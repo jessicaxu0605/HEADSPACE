@@ -123,10 +123,17 @@ account, with the new user as owner and a self node built from their profile,
 so workspace-scoped endpoints work immediately after the first login.
 
 `GET /api/v1/workspaces` requires a bearer token and returns
-`{"workspaces": [...]}`: every live workspace in which the caller has an active
-membership, each with that membership's `role` (`owner`, `editor`, or `viewer`),
-ordered by when the caller joined. Clients use it to choose the `workspace_id`
-for scoped requests.
+`{"workspaces": [...], "last_used_workspace_id": ...}`: every live workspace in
+which the caller has an active membership, each with that membership's `role`
+(`owner`, `editor`, or `viewer`), ordered by when the caller joined, plus the
+listed workspace the caller opened most recently (or `null`). Clients use it to
+choose the `workspace_id` for scoped requests, showing a workspace picker when
+there is no last-used workspace.
+
+`PUT /api/v1/workspaces/{workspace_id}/last-used` requires a bearer token and an
+active membership (`403` otherwise) and records that workspace as the caller's
+last used, on `workspace_member.last_used_at`. Signup marks the default
+workspace as last used, so a new account's first login opens it directly.
 
 `POST /api/v1/workspaces` requires a bearer token and accepts a workspace
 `name` plus `create_self_node` (default `false`). Creation is atomic: it creates
