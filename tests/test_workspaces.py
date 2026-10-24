@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, date, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -18,13 +18,13 @@ def _authenticated() -> AuthenticatedSession:
     now = datetime.now(UTC)
     user = User(
         id=uuid4(),
-        login="jessica",
+        email="jessica@example.com",
         name="Jessica Xu",
         created_at=now,
         birthday=date(1995, 4, 12),
         about="Builds memory tools.",
     )
-    session = Session(uuid4(), user.id, None, now, now + timedelta(hours=24))
+    session = Session(uuid4(), user.id, now, now + timedelta(hours=24))
     return AuthenticatedSession(user, session)
 
 
@@ -40,61 +40,38 @@ class FakeWorkspaceStore:
             created_by_user_id=kwargs["user"].id,
             created_at=datetime.now(UTC),
         )
-        updated_session = Session(
-            id=kwargs["session_id"],
-            user_id=kwargs["user"].id,
-            active_workspace_id=workspace.id,
-            created_at=datetime.now(UTC),
-            expires_at=datetime.now(UTC) + timedelta(hours=24),
-        )
         return CreatedWorkspace(
             workspace,
             uuid4() if kwargs["create_self_node"] else None,
-            updated_session,
         )
 
 
-class FakeTokenCodec:
-    def __init__(self) -> None:
-        self.session = None
-
-    def encode(self, session):
-        self.session = session
-        return "new.workspace.token"
-
-
 class WorkspaceServiceTests(unittest.IsolatedAsyncioTestCase):
-    async def test_creates_workspace_activates_it_and_requests_self_node(self):
+    async def test_creates_workspace_and_requests_self_node(self):
         authenticated = _authenticated()
         store = FakeWorkspaceStore()
-        tokens = FakeTokenCodec()
-        service = WorkspaceService(store=store, tokens=tokens)
+        service = WorkspaceService(store=store)
 
-        issued = await service.create_workspace(
+        created = await service.create_workspace(
             authenticated=authenticated,
             name="Personal",
             create_self_node=True,
         )
 
         self.assertEqual(store.call["user"], authenticated.user)
-        self.assertEqual(store.call["session_id"], authenticated.session.id)
+        self.assertNotIn("session_id", store.call)
         self.assertTrue(store.call["create_self_node"])
-        self.assertIsNotNone(issued.created.self_node_id)
-        self.assertEqual(
-            issued.created.session.active_workspace_id, issued.created.workspace.id
-        )
-        self.assertEqual(tokens.session, issued.created.session)
-        self.assertEqual(issued.access_token, "new.workspace.token")
+        self.assertIsNotNone(created.self_node_id)
 
 
 class WorkspaceApiTests(unittest.TestCase):
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
-    def test_create_workspace_requires_auth_and_returns_replacement_token(self):
+    def test_create_workspace_requires_auth_without_replacing_session(self):
         authenticated = _authenticated()
         store = FakeWorkspaceStore()
-        service = WorkspaceService(store=store, tokens=FakeTokenCodec())
+        service = WorkspaceService(store=store)
         app.dependency_overrides[get_current_session] = lambda: authenticated
         app.dependency_overrides[get_workspace_service] = lambda: service
         client = TestClient(app)
@@ -109,10 +86,8 @@ class WorkspaceApiTests(unittest.TestCase):
         self.assertEqual(body["workspace"]["name"], "Personal")
         self.assertEqual(body["workspace"]["role"], "owner")
         self.assertIsNotNone(body["self_node_id"])
-        self.assertEqual(body["access_token"], "new.workspace.token")
-        self.assertEqual(
-            body["session"]["active_workspace_id"], body["workspace"]["id"]
-        )
+        self.assertNotIn("access_token", body)
+        self.assertNotIn("session", body)
 
     def test_rejects_unauthenticated_workspace_creation(self):
         response = TestClient(app).post(

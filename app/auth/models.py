@@ -10,7 +10,7 @@ from uuid import UUID
 @dataclass(frozen=True)
 class User:
     id: UUID
-    login: str
+    email: str
     name: str
     created_at: datetime
     birthday: date | None = None
@@ -26,7 +26,6 @@ class UserWithPassword(User):
 class Session:
     id: UUID
     user_id: UUID
-    active_workspace_id: UUID | None
     created_at: datetime
     expires_at: datetime
     revoked_at: datetime | None = None

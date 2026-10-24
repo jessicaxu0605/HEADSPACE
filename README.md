@@ -87,15 +87,18 @@ The response includes the starting node, every active canonical node reachable w
 
 ## Authentication
 
-Local accounts use a case-insensitive `login`, display `name`, and an Argon2id
-password hash. Accounts may also store `birthday` and `about` profile fields.
+Local accounts use a required, case-insensitive `email`, display `name`, and an
+Argon2id password hash. The user UUID remains the stable account identity; email is
+the credential for this local-password MVP. Accounts may also store `birthday` and
+`about` profile fields.
 Create an account with `POST /api/v1/auth/users`, then exchange
 its credentials at `POST /api/v1/auth/login`. Login creates a persisted,
-revocable session and returns an RS256-signed JWT. The token and session include
-the user's first active workspace membership, or `null` when the user does not
-yet belong to a workspace. A caller may request a particular active membership
-with `workspace_id` in the login request. `GET /api/v1/auth/session` validates
-both the JWT signature and its current database session.
+revocable session and returns an RS256-signed JWT. The token and session identify
+the user, but contain no workspace selection or permissions. The
+`GET /api/v1/auth/session` endpoint validates both the JWT signature and its
+current database session. `POST /api/v1/auth/logout` revokes the current
+persisted session, immediately invalidating its JWT. Workspace access is
+authorized separately through `workspace_member`.
 
 Generate a persistent RSA keypair for local development and configure the paths
 shown in `.env.example`:
@@ -116,14 +119,14 @@ configured public key. There is intentionally no shared-secret JWT mode.
 `POST /api/v1/workspaces` requires a bearer token and accepts a workspace
 `name` plus `create_self_node` (default `false`). Creation is atomic: it creates
 the workspace, adds the caller as an active owner, optionally creates a
-canonical `person` node from the caller's profile, and makes the new workspace
-active on the current session. When requested, the self node uses `about` as
-its summary, stores birthday as a person detail, receives a stable
-`headspace_user` external ID, and is queued for search projection rebuilding.
+canonical `person` node from the caller's profile. When requested, the self
+node uses `about` as its summary, stores birthday as a person detail, receives
+a stable `headspace_user` external ID, and is queued for search projection
+rebuilding.
 
-Because the active-workspace claim changes, the response includes a replacement
-RS256 access token. Clients must use that token for subsequent authenticated
-requests; the previous token is invalidated by the session/workspace mismatch.
+Workspace creation does not modify the current session or issue a replacement
+token. Clients select a workspace on workspace-scoped requests, where membership
+and role are authorized independently of the session.
 
 ## Local embeddings
 

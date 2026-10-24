@@ -39,43 +39,42 @@ def _keys() -> tuple[str, str]:
 
 class FakeAuthStore:
     def __init__(self) -> None:
-        self.users_by_login: dict[str, UserWithPassword] = {}
+        self.users_by_email: dict[str, UserWithPassword] = {}
         self.sessions: dict[UUID, Session] = {}
-        self.workspace_id: UUID | None = None
         self.touched: list[UUID] = []
 
     async def create_user(
-        self, *, login, name, password_hash, birthday, about
+        self, *, email, name, password_hash, birthday, about
     ):
         now = datetime.now(UTC)
         user = UserWithPassword(
             uuid4(),
-            login,
+            email,
             name,
             now,
             birthday,
             about,
             password_hash=password_hash,
         )
-        self.users_by_login[login.casefold()] = user
+        self.users_by_email[email.casefold()] = user
         return User(
             user.id,
-            user.login,
+            user.email,
             user.name,
             user.created_at,
             user.birthday,
             user.about,
         )
 
-    async def get_user_by_login(self, *, login):
-        return self.users_by_login.get(login.casefold())
+    async def get_user_by_email(self, *, email):
+        return self.users_by_email.get(email.casefold())
 
     async def get_user(self, *, user_id):
-        for user in self.users_by_login.values():
+        for user in self.users_by_email.values():
             if user.id == user_id:
                 return User(
                     user.id,
-                    user.login,
+                    user.email,
                     user.name,
                     user.created_at,
                     user.birthday,
@@ -83,22 +82,9 @@ class FakeAuthStore:
                 )
         return None
 
-    async def create_session(
-        self, *, user_id, requested_workspace_id, expires_at
-    ):
-        if (
-            requested_workspace_id is not None
-            and requested_workspace_id != self.workspace_id
-        ):
-            raise ValueError("User is not an active member of that workspace.")
+    async def create_session(self, *, user_id, expires_at):
         now = datetime.now(UTC)
-        session = Session(
-            uuid4(),
-            user_id,
-            requested_workspace_id or self.workspace_id,
-            now,
-            expires_at,
-        )
+        session = Session(uuid4(), user_id, now, expires_at)
         self.sessions[session.id] = session
         return session
 
@@ -107,6 +93,17 @@ class FakeAuthStore:
 
     async def touch_session(self, *, session_id):
         self.touched.append(session_id)
+
+    async def revoke_session(self, *, session_id, user_id):
+        session = self.sessions.get(session_id)
+        if session is None or session.user_id != user_id:
+            return
+        self.sessions[session_id] = Session(
+            **{
+                **session.__dict__,
+                "revoked_at": session.revoked_at or datetime.now(UTC),
+            }
+        )
 
 
 class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -126,14 +123,14 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_creates_user_with_argon2_hash_and_never_stores_password(self):
         user = await self.service.create_user(
-            login="jessica",
+            email="jessica@example.com",
             name="Jessica Xu",
             password="correct horse battery",
             birthday=date(1995, 4, 12),
             about="Builds memory tools.",
         )
 
-        stored = self.store.users_by_login["jessica"]
+        stored = self.store.users_by_email["jessica@example.com"]
         self.assertEqual(user.name, "Jessica Xu")
         self.assertNotEqual(stored.password_hash, "correct horse battery")
         self.assertTrue(stored.password_hash.startswith("$argon2id$"))
@@ -143,35 +140,38 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user.birthday, date(1995, 4, 12))
         self.assertEqual(user.about, "Builds memory tools.")
 
-    async def test_login_issues_rs256_token_with_active_workspace(self):
-        workspace_id = uuid4()
-        self.store.workspace_id = workspace_id
+    async def test_login_issues_workspace_agnostic_rs256_token(self):
         user = await self.service.create_user(
-            login="jessica", name="Jessica Xu", password="correct horse battery"
+            email="jessica@example.com",
+            name="Jessica Xu",
+            password="correct horse battery",
         )
 
         issued = await self.service.login(
-            login="JESSICA", password="correct horse battery"
+            email="JESSICA@EXAMPLE.COM", password="correct horse battery"
         )
         claims = self.codec.decode(issued.access_token)
 
         self.assertEqual(claims.user_id, user.id)
         self.assertEqual(claims.session_id, issued.authenticated.session.id)
-        self.assertEqual(claims.active_workspace_id, workspace_id)
         header = jwt.get_unverified_header(issued.access_token)
         self.assertEqual(header["alg"], "RS256")
+        payload = jwt.decode(issued.access_token, options={"verify_signature": False})
+        self.assertNotIn("workspace_id", payload)
 
     async def test_authenticate_checks_persisted_session_and_claims(self):
         await self.service.create_user(
-            login="jessica", name="Jessica Xu", password="correct horse battery"
+            email="jessica@example.com",
+            name="Jessica Xu",
+            password="correct horse battery",
         )
         issued = await self.service.login(
-            login="jessica", password="correct horse battery"
+            email="jessica@example.com", password="correct horse battery"
         )
 
         authenticated = await self.service.authenticate(issued.access_token)
 
-        self.assertEqual(authenticated.user.login, "jessica")
+        self.assertEqual(authenticated.user.email, "jessica@example.com")
         self.assertEqual(self.store.touched, [authenticated.session.id])
 
         self.store.sessions[authenticated.session.id] = Session(
@@ -185,13 +185,17 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejects_wrong_password_and_tampered_token(self):
         await self.service.create_user(
-            login="jessica", name="Jessica Xu", password="correct horse battery"
+            email="jessica@example.com",
+            name="Jessica Xu",
+            password="correct horse battery",
         )
         with self.assertRaises(InvalidCredentialsError):
-            await self.service.login(login="jessica", password="wrong password")
+            await self.service.login(
+                email="jessica@example.com", password="wrong password"
+            )
 
         issued = await self.service.login(
-            login="jessica", password="correct horse battery"
+            email="jessica@example.com", password="correct horse battery"
         )
         head, body, signature = issued.access_token.split(".")
         replacement = "A" if signature[-1] != "A" else "B"
@@ -199,22 +203,40 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(InvalidTokenError):
             self.codec.decode(tampered)
 
+    async def test_logout_revokes_current_session(self):
+        await self.service.create_user(
+            email="jessica@example.com",
+            name="Jessica Xu",
+            password="correct horse battery",
+        )
+        issued = await self.service.login(
+            email="jessica@example.com", password="correct horse battery"
+        )
+
+        await self.service.logout(issued.authenticated)
+
+        self.assertIsNotNone(
+            self.store.sessions[issued.authenticated.session.id].revoked_at
+        )
+        with self.assertRaises(InvalidTokenError):
+            await self.service.authenticate(issued.access_token)
+
 
 class FakeApiAuthService:
     def __init__(self) -> None:
         self.created = None
         self.login_request = None
         self.authenticated_token = None
+        self.logged_out = None
         self.user = User(
             UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-            "jessica.xu",
+            "jessica@example.com",
             "Jessica Xu",
             datetime(2026, 1, 1, tzinfo=UTC),
         )
         self.session = Session(
             UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             self.user.id,
-            UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             datetime(2026, 1, 2, tzinfo=UTC),
             datetime(2026, 1, 3, tzinfo=UTC),
         )
@@ -223,7 +245,7 @@ class FakeApiAuthService:
         self.created = kwargs
         return User(
             self.user.id,
-            kwargs["login"],
+            kwargs["email"],
             kwargs["name"],
             self.user.created_at,
             kwargs["birthday"],
@@ -240,6 +262,9 @@ class FakeApiAuthService:
         self.authenticated_token = token
         return AuthenticatedSession(self.user, self.session)
 
+    async def logout(self, authenticated):
+        self.logged_out = authenticated
+
 
 class AuthApiTests(unittest.TestCase):
     def tearDown(self) -> None:
@@ -253,7 +278,7 @@ class AuthApiTests(unittest.TestCase):
         response = client.post(
             "/api/v1/auth/users",
             json={
-                "login": " jessica@example.com ",
+                "email": " Jessica@Example.com ",
                 "name": " Jessica Xu ",
                 "password": "correct horse battery",
                 "birthday": "1995-04-12",
@@ -262,11 +287,11 @@ class AuthApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.json()["login"], "jessica@example.com")
+        self.assertEqual(response.json()["email"], "jessica@example.com")
         self.assertEqual(
             service.created,
             {
-                "login": "jessica@example.com",
+                "email": "jessica@example.com",
                 "name": "Jessica Xu",
                 "password": "correct horse battery",
                 "birthday": date(1995, 4, 12),
@@ -274,18 +299,43 @@ class AuthApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.json()["birthday"], "1995-04-12")
+        self.assertNotIn("login", response.json())
         self.assertNotIn("gender", response.json())
+
+        invalid_email = client.post(
+            "/api/v1/auth/users",
+            json={
+                "email": "not-an-email",
+                "name": "Name",
+                "password": "correct horse battery",
+            },
+        )
+        self.assertEqual(invalid_email.status_code, 422)
+
+        legacy_login = client.post(
+            "/api/v1/auth/users",
+            json={
+                "login": "person@example.com",
+                "name": "Name",
+                "password": "correct horse battery",
+            },
+        )
+        self.assertEqual(legacy_login.status_code, 422)
 
         weak = client.post(
             "/api/v1/auth/users",
-            json={"login": "valid", "name": "Name", "password": "too-short"},
+            json={
+                "email": "valid@example.com",
+                "name": "Name",
+                "password": "too-short",
+            },
         )
         self.assertEqual(weak.status_code, 422)
 
         gender = client.post(
             "/api/v1/auth/users",
             json={
-                "login": "another@example.com",
+                "email": "another@example.com",
                 "name": "Another User",
                 "password": "correct horse battery",
                 "gender": "woman",
@@ -293,7 +343,7 @@ class AuthApiTests(unittest.TestCase):
         )
         self.assertEqual(gender.status_code, 422)
 
-    def test_login_and_current_session_endpoints_include_workspace(self):
+    def test_login_and_current_session_are_workspace_agnostic(self):
         service = FakeApiAuthService()
         app.dependency_overrides[get_auth_service] = lambda: service
         client = TestClient(app)
@@ -301,21 +351,16 @@ class AuthApiTests(unittest.TestCase):
         login = client.post(
             "/api/v1/auth/login",
             json={
-                "login": "jessica.xu",
+                "email": "Jessica@Example.com",
                 "password": "correct horse battery",
-                "workspace_id": str(service.session.active_workspace_id),
             },
         )
 
         self.assertEqual(login.status_code, 200)
         self.assertEqual(login.json()["access_token"], "signed.jwt.token")
-        self.assertEqual(
-            login.json()["session"]["active_workspace_id"],
-            str(service.session.active_workspace_id),
-        )
-        self.assertEqual(
-            service.login_request["workspace_id"], service.session.active_workspace_id
-        )
+        self.assertNotIn("active_workspace_id", login.json()["session"])
+        self.assertNotIn("workspace_id", service.login_request)
+        self.assertEqual(service.login_request["email"], "jessica@example.com")
 
         current = client.get(
             "/api/v1/auth/session",
@@ -323,8 +368,41 @@ class AuthApiTests(unittest.TestCase):
         )
 
         self.assertEqual(current.status_code, 200)
-        self.assertEqual(current.json()["user"]["login"], "jessica.xu")
+        self.assertEqual(
+            current.json()["user"]["email"], "jessica@example.com"
+        )
+        self.assertNotIn("active_workspace_id", current.json())
         self.assertEqual(service.authenticated_token, "signed.jwt.token")
+
+        workspace_login = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "jessica@example.com",
+                "password": "correct horse battery",
+                "workspace_id": str(uuid4()),
+            },
+        )
+        self.assertEqual(workspace_login.status_code, 422)
+
+    def test_logout_revokes_authenticated_session(self):
+        service = FakeApiAuthService()
+        app.dependency_overrides[get_auth_service] = lambda: service
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/v1/auth/logout",
+            headers={"Authorization": "Bearer signed.jwt.token"},
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.content, b"")
+        self.assertEqual(service.logged_out.session.id, service.session.id)
+        self.assertEqual(service.authenticated_token, "signed.jwt.token")
+
+    def test_logout_requires_authentication(self):
+        response = TestClient(app).post("/api/v1/auth/logout")
+
+        self.assertEqual(response.status_code, 401)
 
 
 if __name__ == "__main__":

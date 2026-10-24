@@ -14,30 +14,30 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.auth.models import AuthenticatedSession, IssuedSession, User
 from app.auth.passwords import PasswordManager
 from app.auth.service import AuthService, InvalidCredentialsError
-from app.auth.store import LoginAlreadyExistsError, PostgresAuthStore
+from app.auth.store import EmailAlreadyExistsError, PostgresAuthStore
 from app.auth.tokens import InvalidTokenError, JwtTokenCodec
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 bearer = HTTPBearer(auto_error=False)
-LOGIN_PATTERN = re.compile(r"^\S+$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class CreateUserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    login: str = Field(min_length=3, max_length=100)
+    email: str = Field(min_length=3, max_length=320)
     name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=12, max_length=1024)
     birthday: date | None = None
     about: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("login")
+    @field_validator("email")
     @classmethod
-    def validate_login(cls, value: str) -> str:
-        value = value.strip()
-        if not LOGIN_PATTERN.fullmatch(value):
-            raise ValueError("login must not contain whitespace")
+    def validate_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(value):
+            raise ValueError("email must be a valid email address")
         return value
 
     @field_validator("name")
@@ -59,22 +59,21 @@ class CreateUserRequest(BaseModel):
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    login: str = Field(min_length=1, max_length=100)
+    email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=1024)
-    workspace_id: UUID | None = None
 
-    @field_validator("login")
+    @field_validator("email")
     @classmethod
-    def normalize_login(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("login must not be blank")
+    def normalize_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not EMAIL_PATTERN.fullmatch(value):
+            raise ValueError("email must be a valid email address")
         return value
 
 
 class UserResponse(BaseModel):
     id: UUID
-    login: str
+    email: str
     name: str
     created_at: datetime
     birthday: date | None
@@ -84,7 +83,7 @@ class UserResponse(BaseModel):
     def from_user(cls, user: User) -> "UserResponse":
         return cls(
             id=user.id,
-            login=user.login,
+            email=user.email,
             name=user.name,
             created_at=user.created_at,
             birthday=user.birthday,
@@ -95,7 +94,6 @@ class UserResponse(BaseModel):
 class SessionResponse(BaseModel):
     id: UUID
     user: UserResponse
-    active_workspace_id: UUID | None
     created_at: datetime
     expires_at: datetime
 
@@ -106,7 +104,6 @@ class SessionResponse(BaseModel):
         return cls(
             id=authenticated.session.id,
             user=UserResponse.from_user(authenticated.user),
-            active_workspace_id=authenticated.session.active_workspace_id,
             created_at=authenticated.session.created_at,
             expires_at=authenticated.session.expires_at,
         )
@@ -169,13 +166,13 @@ async def create_user(
 ) -> UserResponse:
     try:
         user = await service.create_user(
-            login=request.login,
+            email=request.email,
             name=request.name,
             password=request.password,
             birthday=request.birthday,
             about=request.about,
         )
-    except LoginAlreadyExistsError as exc:
+    except EmailAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return UserResponse.from_user(user)
 
@@ -187,14 +184,11 @@ async def login(
 ) -> LoginResponse:
     try:
         issued = await service.login(
-            login=request.login,
+            email=request.email,
             password=request.password,
-            workspace_id=request.workspace_id,
         )
     except InvalidCredentialsError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return LoginResponse.from_issued(issued)
 
 
@@ -203,3 +197,11 @@ async def read_session(
     authenticated: AuthenticatedSession = Depends(get_current_session),
 ) -> SessionResponse:
     return SessionResponse.from_authenticated(authenticated)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    authenticated: AuthenticatedSession = Depends(get_current_session),
+    service: AuthService = Depends(get_auth_service),
+) -> None:
+    await service.logout(authenticated)

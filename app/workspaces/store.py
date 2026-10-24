@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 from typing import Protocol
-from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
-from app.auth.models import Session, User
+from app.auth.models import User
 from app.persistence.postgres.connection import get_async_connection
 from app.workspaces.models import CreatedWorkspace, Workspace
-
-
-class StaleSessionError(ValueError):
-    pass
 
 
 class WorkspaceStore(Protocol):
@@ -21,29 +16,15 @@ class WorkspaceStore(Protocol):
         self,
         *,
         user: User,
-        session_id: UUID,
         name: str,
         create_self_node: bool,
     ) -> CreatedWorkspace: ...
-
-
-def _session(row) -> Session:
-    return Session(
-        id=row["id"],
-        user_id=row["user_id"],
-        active_workspace_id=row["active_workspace_id"],
-        created_at=row["created_at"],
-        expires_at=row["expires_at"],
-        revoked_at=row["revoked_at"],
-    )
-
 
 class PostgresWorkspaceStore:
     async def create_workspace(
         self,
         *,
         user: User,
-        session_id: UUID,
         name: str,
         create_self_node: bool,
     ) -> CreatedWorkspace:
@@ -118,28 +99,10 @@ class PostgresWorkspaceStore:
                         (workspace_id, self_node_id),
                     )
 
-                session_row = await (
-                    await conn.execute(
-                        """
-                        UPDATE auth_session
-                        SET active_workspace_id = %s, last_used_at = now()
-                        WHERE id = %s AND user_id = %s
-                          AND revoked_at IS NULL AND expires_at > now()
-                        RETURNING id, user_id, active_workspace_id, created_at,
-                                  expires_at, revoked_at
-                        """,
-                        (workspace_id, session_id, user.id),
-                    )
-                ).fetchone()
-                if session_row is None:
-                    raise StaleSessionError(
-                        "The current session is no longer active."
-                    )
-
         workspace = Workspace(
             id=workspace_row["id"],
             name=workspace_row["name"],
             created_by_user_id=workspace_row["created_by_user_id"],
             created_at=workspace_row["created_at"],
         )
-        return CreatedWorkspace(workspace, self_node_id, _session(session_row))
+        return CreatedWorkspace(workspace, self_node_id)

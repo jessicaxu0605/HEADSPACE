@@ -26,7 +26,6 @@ class InvalidTokenError(ValueError):
 class TokenClaims:
     user_id: UUID
     session_id: UUID
-    active_workspace_id: UUID | None
     expires_at: datetime
 
 
@@ -79,17 +78,11 @@ class JwtTokenCodec:
         )
 
     def encode(self, session: Session) -> str:
-        workspace_id = (
-            str(session.active_workspace_id)
-            if session.active_workspace_id is not None
-            else None
-        )
         payload: dict[str, Any] = {
             "iss": self._issuer,
             "aud": self._audience,
             "sub": str(session.user_id),
             "sid": str(session.id),
-            "workspace_id": workspace_id,
             "iat": session.created_at,
             "exp": session.expires_at,
         }
@@ -105,12 +98,10 @@ class JwtTokenCodec:
                 audience=self._audience,
                 options={"require": ["exp", "iat", "iss", "aud", "sub", "sid"]},
             )
-            workspace = payload.get("workspace_id")
             expires_at = datetime.fromtimestamp(float(payload["exp"]), tz=UTC)
             return TokenClaims(
                 user_id=UUID(payload["sub"]),
                 session_id=UUID(payload["sid"]),
-                active_workspace_id=UUID(workspace) if workspace else None,
                 expires_at=expires_at,
             )
         except (jwt.PyJWTError, KeyError, TypeError, ValueError) as exc:

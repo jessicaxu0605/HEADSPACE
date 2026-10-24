@@ -6,15 +6,14 @@ from datetime import datetime
 from functools import lru_cache
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.auth.api import SessionResponse, get_current_session
-from app.auth.models import AuthenticatedSession, User
-from app.auth.tokens import JwtTokenCodec
-from app.workspaces.models import IssuedWorkspace, Workspace
+from app.auth.api import get_current_session
+from app.auth.models import AuthenticatedSession
+from app.workspaces.models import CreatedWorkspace, Workspace
 from app.workspaces.service import WorkspaceService
-from app.workspaces.store import PostgresWorkspaceStore, StaleSessionError
+from app.workspaces.store import PostgresWorkspaceStore
 
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
@@ -55,28 +54,18 @@ class WorkspaceResponse(BaseModel):
 class CreateWorkspaceResponse(BaseModel):
     workspace: WorkspaceResponse
     self_node_id: UUID | None
-    access_token: str
-    token_type: str = "bearer"
-    session: SessionResponse
 
     @classmethod
-    def from_issued(
-        cls, issued: IssuedWorkspace, user: User
-    ) -> "CreateWorkspaceResponse":
-        authenticated = AuthenticatedSession(user, issued.created.session)
+    def from_created(cls, created: CreatedWorkspace) -> "CreateWorkspaceResponse":
         return cls(
-            workspace=WorkspaceResponse.from_workspace(issued.created.workspace),
-            self_node_id=issued.created.self_node_id,
-            access_token=issued.access_token,
-            session=SessionResponse.from_authenticated(authenticated),
+            workspace=WorkspaceResponse.from_workspace(created.workspace),
+            self_node_id=created.self_node_id,
         )
 
 
 @lru_cache(maxsize=1)
 def get_workspace_service() -> WorkspaceService:
-    return WorkspaceService(
-        store=PostgresWorkspaceStore(), tokens=JwtTokenCodec.from_environment()
-    )
+    return WorkspaceService(store=PostgresWorkspaceStore())
 
 
 @router.post(
@@ -87,16 +76,9 @@ async def create_workspace(
     authenticated: AuthenticatedSession = Depends(get_current_session),
     service: WorkspaceService = Depends(get_workspace_service),
 ) -> CreateWorkspaceResponse:
-    try:
-        issued = await service.create_workspace(
-            authenticated=authenticated,
-            name=request.name,
-            create_self_node=request.create_self_node,
-        )
-    except StaleSessionError as exc:
-        raise HTTPException(
-            status_code=401,
-            detail=str(exc),
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
-    return CreateWorkspaceResponse.from_issued(issued, authenticated.user)
+    created = await service.create_workspace(
+        authenticated=authenticated,
+        name=request.name,
+        create_self_node=request.create_self_node,
+    )
+    return CreateWorkspaceResponse.from_created(created)

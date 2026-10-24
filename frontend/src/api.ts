@@ -47,7 +47,6 @@ export type UserProfile = {
 export type AuthSession = {
   id: string;
   user: UserProfile;
-  active_workspace_id: string | null;
   created_at: string;
   expires_at: string;
 };
