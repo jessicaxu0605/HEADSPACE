@@ -34,7 +34,10 @@ type AuthStatusTarget =
   | null;
 
 type AuthFlowProps = {
-  onAuthenticated: (login: LoginResponse) => void;
+  onAuthenticated: (
+    login: LoginResponse,
+    options?: { newAccount?: boolean },
+  ) => void;
 };
 
 const emptySignup: CreateUserInput = {
@@ -134,10 +137,12 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
     setSubmitting(true);
     clearStatus();
     try {
-      // Signup also creates the account's default workspace, which the
-      // workspace provider selects once the new session is signed in.
+      // Signup also creates the account's default workspace; marking the
+      // session as new lets the workspace provider open it for the tutorial.
       await createUser(skipAbout ? { ...signup, about: "" } : signup);
-      onAuthenticated(await login(signup.email, signup.password));
+      onAuthenticated(await login(signup.email, signup.password), {
+        newAccount: true,
+      });
     } catch (error) {
       showStatus(
         error instanceof Error

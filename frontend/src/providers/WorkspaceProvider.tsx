@@ -28,6 +28,11 @@ export type WorkspaceState =
   | { status: "loading" }
   | { status: "error"; message: string; retry: () => void }
   | { status: "empty" }
+  | {
+      status: "selecting";
+      workspaces: Workspace[];
+      switchWorkspace: (workspaceId: string) => void;
+    }
   | ({ status: "ready" } & ActiveWorkspace);
 
 type LoadedWorkspaces = {
@@ -60,24 +65,25 @@ const rememberWorkspace = (userId: string, workspaceId: string | null): void => 
       window.localStorage.setItem(rememberedWorkspaceKey(userId), workspaceId);
     }
   } catch {
-    // Without storage the first workspace is chosen on each visit.
+    // Without storage the user picks a workspace on each visit.
   }
 };
 
-// Keep the current choice if it is still available, then the remembered one,
-// then the oldest membership. A new account has exactly one workspace, the
-// default one created at signup, so that one becomes active and remembered.
+// Keep the current choice if it is still available, then the remembered one.
+// A session fresh from signup opens the default workspace created with the
+// account (its only membership) for the tutorial; otherwise null asks the
+// user to pick.
 const chooseWorkspace = (
   userId: string,
   workspaces: Workspace[],
   currentId: string | null,
+  newAccount: boolean,
 ): string | null => {
   const available = new Set(workspaces.map((workspace) => workspace.id));
   const rememberedId = readRememberedWorkspace(userId);
   const activeId =
     [currentId, rememberedId].find((id) => id !== null && available.has(id)) ??
-    workspaces[0]?.id ??
-    null;
+    (newAccount ? (workspaces[0]?.id ?? null) : null);
   rememberWorkspace(userId, activeId);
   return activeId;
 };
@@ -85,6 +91,7 @@ const chooseWorkspace = (
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const userId = session.status === "signed-in" ? session.user.id : null;
+  const newAccount = session.status === "signed-in" && session.newAccount;
   const [loaded, setLoaded] = useState<LoadedWorkspaces | null>(null);
   const [failure, setFailure] = useState<{ userId: string; message: string } | null>(
     null,
@@ -107,6 +114,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             userId,
             workspaces,
             current?.userId === userId ? current.activeId : null,
+            newAccount,
           ),
         }));
         setFailure(null);
@@ -118,7 +126,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setFailure({ userId, message });
       });
     return () => request.abort();
-  }, [reloadCount, userId]);
+  }, [newAccount, reloadCount, userId]);
 
   const activeId = loaded?.userId === userId ? loaded.activeId : null;
 
@@ -160,7 +168,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const workspace = loaded.workspaces.find(
         (item) => item.id === loaded.activeId,
       );
-      if (!workspace) return { status: "empty" };
+      if (!workspace) {
+        if (loaded.workspaces.length === 0) return { status: "empty" };
+        return {
+          status: "selecting",
+          workspaces: loaded.workspaces,
+          switchWorkspace,
+        };
+      }
       return {
         status: "ready",
         workspace,

@@ -5,6 +5,7 @@ import ResultInterface from "./features/ResultInterface";
 import SearchInterface from "./features/SearchInterface";
 import SurfacedMemories from "./features/SurfacedMemories";
 import TextEntryInterface from "./features/TextEntryInterface";
+import WorkspaceSelection from "./features/WorkspaceSelection";
 import WorkspaceUnavailable from "./features/WorkspaceUnavailable";
 import { BrainLoader, PageTransition, TextButton } from "./component-library";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
@@ -53,6 +54,15 @@ function AppScreens() {
   } else if (workspaceState.status === "empty") {
     pageKey = "workspace-empty";
     screen = <WorkspaceUnavailable onLogout={session.signOut} />;
+  } else if (workspaceState.status === "selecting") {
+    pageKey = "workspace-selection";
+    screen = (
+      <WorkspaceSelection
+        workspaces={workspaceState.workspaces}
+        onSelect={workspaceState.switchWorkspace}
+        onLogout={session.signOut}
+      />
+    );
   } else if (workspaceState.status === "ready") {
     pageKey = `workspace:${workspaceState.workspace.id}`;
     screen = (

@@ -22,16 +22,22 @@ import {
 export type SessionState =
   | { status: "checking" }
   | { status: "signed-out" }
-  | { status: "signed-in"; user: UserProfile };
+  | { status: "signed-in"; user: UserProfile; newAccount: boolean };
+
+type SignInOptions = {
+  // Set when the session comes straight from signup, so the new account's
+  // default workspace opens without asking the user to choose one.
+  newAccount?: boolean;
+};
 
 type SessionContextValue = SessionState & {
-  signIn: (login: LoginResponse) => void;
+  signIn: (login: LoginResponse, options?: SignInOptions) => void;
   signOut: () => void;
 };
 
 // The user confirmed for one specific token. A different token (another login,
 // another tab) has to be confirmed again before anything is shown.
-type VerifiedSession = { token: string; user: UserProfile };
+type VerifiedSession = { token: string; user: UserProfile; newAccount: boolean };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
@@ -44,7 +50,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (token === null || isVerified) return;
     const request = new AbortController();
     getCurrentSession({ signal: request.signal })
-      .then((session) => setVerified({ token, user: session.user }))
+      .then((session) =>
+        setVerified({ token, user: session.user, newAccount: false }),
+      )
       .catch(() => {
         if (request.signal.aborted) return;
         // A 401 has already cleared the token; any other failure leaves the
@@ -54,10 +62,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => request.abort();
   }, [isVerified, token]);
 
-  const signIn = useCallback((login: LoginResponse): void => {
-    setVerified({ token: login.access_token, user: login.session.user });
-    setAccessToken(login.access_token);
-  }, []);
+  const signIn = useCallback(
+    (login: LoginResponse, options: SignInOptions = {}): void => {
+      setVerified({
+        token: login.access_token,
+        user: login.session.user,
+        newAccount: options.newAccount ?? false,
+      });
+      setAccessToken(login.access_token);
+    },
+    [],
+  );
 
   const signOut = useCallback((): void => {
     // Revoke the server session in the background; the reader is signed out
@@ -72,7 +87,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       token === null
         ? { status: "signed-out" }
         : isVerified && verified
-          ? { status: "signed-in", user: verified.user }
+          ? {
+              status: "signed-in",
+              user: verified.user,
+              newAccount: verified.newAccount,
+            }
           : { status: "checking" };
     return { ...state, signIn, signOut };
   }, [isVerified, signIn, signOut, token, verified]);

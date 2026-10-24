@@ -238,6 +238,7 @@ of Headspace domain state and APIs.
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
 | `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
 | `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. |
+| `WorkspaceSelection` | Signed-in screen listing the user's workspaces when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. |
 | `WorkspaceUnavailable` | Signed-in screen for an account whose workspaces failed to load or that has no active membership. |
 
 Small render helpers that are private to one feature, such as memory cards inside
@@ -250,8 +251,8 @@ nests `SessionProvider` > `WorkspaceProvider` and picks one screen from their st
 
 | Provider / hook | Responsibility and reuse boundary |
 | --- | --- |
-| `SessionProvider` / `useSession()` | Whether this browser is signed in: `checking`, `signed-out`, or `signed-in` with the `user`, plus `signIn(loginResponse)` and `signOut()`. The access token in `api.ts` is the source of truth (read with `useSyncExternalStore`); `api.ts` clears it on a 401, which signs the reader out everywhere. Do not store tokens or session flags elsewhere. |
-| `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then remembered per user, then oldest). Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
+| `SessionProvider` / `useSession()` | Whether this browser is signed in: `checking`, `signed-out`, or `signed-in` with the `user` and `newAccount` (true only for the session signup creates), plus `signIn(loginResponse, { newAccount })` and `signOut()`. The access token in `api.ts` is the source of truth (read with `useSyncExternalStore`); `api.ts` clears it on a 401, which signs the reader out everywhere. Do not store tokens or session flags elsewhere. |
+| `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then remembered per user, then the default workspace for a session fresh from signup); otherwise it reports `selecting` so `App` shows `WorkspaceSelection`. Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
 | `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, and `switchWorkspace`, for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
 
 The signed-in app is keyed by workspace id, so switching workspace remounts it and
