@@ -9,12 +9,12 @@ import type { GraphSelection } from "../hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "../memory_graph";
 import {
   BlurredContainer,
+  BrainLoader,
   FadeTransition,
   PresenceTransition,
   motionDurations,
   motionStaggers,
 } from "../component-library";
-import BrainLoader from "./BrainLoader";
 import NeighborhoodGraph from "./NeighborhoodGraph";
 import NodeDetails from "./NodeDetails";
 import RelationshipPage from "./RelationshipPage";

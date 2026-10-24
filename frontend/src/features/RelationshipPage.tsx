@@ -8,9 +8,9 @@ import {
   waitForBrainLoaderFade,
   waitForBrainLoaderLeadIn,
 } from "../loading";
-import BrainLoader from "./BrainLoader";
 import {
   BlurredContainer,
+  BrainLoader,
   PresenceTransition,
 } from "../component-library";
 

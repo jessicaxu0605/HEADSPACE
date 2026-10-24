@@ -1,16 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  clearAccessToken,
-  getAccessToken,
-  getCurrentSession,
-  queryNodes,
-  type NodeQueryMatch,
-} from "./api";
-import AuthFlow from "./components/AuthFlow";
-import ResultInterface from "./components/ResultInterface";
-import SearchInterface from "./components/SearchInterface";
-import SurfacedMemories from "./components/SurfacedMemories";
-import TextEntryInterface from "./components/TextEntryInterface";
+import { useEffect, useRef, useState } from "react";
+import { clearAccessToken, queryNodes, type NodeQueryMatch } from "./api";
+import AuthFlow from "./features/AuthFlow";
+import ResultInterface from "./features/ResultInterface";
+import SearchInterface from "./features/SearchInterface";
+import SurfacedMemories from "./features/SurfacedMemories";
+import TextEntryInterface from "./features/TextEntryInterface";
 import { PageTransition, TextButton } from "./component-library";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "./memory_graph";
@@ -19,58 +13,23 @@ const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
 
 export default function App() {
-  const [authStatus, setAuthStatus] = useState<
-    "checking" | "authenticated" | "unauthenticated"
-  >("checking");
-
-  useEffect(() => {
-    if (!getAccessToken()) {
-      setAuthStatus("unauthenticated");
-      return;
-    }
-    let active = true;
-    void getCurrentSession()
-      .then(() => {
-        if (active) setAuthStatus("authenticated");
-      })
-      .catch(() => {
-        clearAccessToken();
-        if (active) setAuthStatus("unauthenticated");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  let content: ReactNode;
-  if (authStatus === "checking") {
-    content = (
-      <main className="auth-shell auth-checking" aria-label="Loading your headspace">
-        <div className="auth-brand">headspace</div>
-        <p>opening your headspace…</p>
-      </main>
-    );
-  } else if (authStatus === "unauthenticated") {
-    content = (
-      <AuthFlow onAuthenticated={() => setAuthStatus("authenticated")} />
-    );
-  } else {
-    content = (
-      <AuthenticatedApp
-        onLogout={() => {
-          clearAccessToken();
-          setAuthStatus("unauthenticated");
-        }}
-      />
-    );
-  }
+  const [authenticated, setAuthenticated] = useState(false);
 
   return (
     <PageTransition
       className="app-state-transition"
-      pageKey={authStatus}
+      pageKey={authenticated ? "authenticated" : "auth"}
     >
-      {content}
+      {authenticated ? (
+        <AuthenticatedApp
+          onLogout={() => {
+            clearAccessToken();
+            setAuthenticated(false);
+          }}
+        />
+      ) : (
+        <AuthFlow onAuthenticated={() => setAuthenticated(true)} />
+      )}
     </PageTransition>
   );
 }

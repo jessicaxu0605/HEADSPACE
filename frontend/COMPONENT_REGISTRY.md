@@ -15,7 +15,7 @@ feature-specific.
 4. Extend an existing primitive when the requested behavior is a general variation
    of it. Create a new primitive only when the semantics or behavior are genuinely
    distinct.
-5. Keep workflow and API state in `src/components`; keep reusable presentation and
+5. Keep workflow and API state in `src/features`; keep reusable presentation and
    interaction behavior in `src/component-library`.
 6. Use the shared motion tokens. Do not introduce isolated duration, easing,
    distance, or stagger values without a component-specific reason.
@@ -28,6 +28,7 @@ The public import surface is:
 import {
   AutoGrowingTextArea,
   BlurredContainer,
+  BrainLoader,
   FadeTransition,
   InlineWarning,
   PageTransition,
@@ -150,6 +151,19 @@ Use it when clipped or floating content should dissolve at its bounds, such as
 notifications or scroll-adjacent surfaces. It is not a generic card, glassmorphism,
 drop-shadow, or backdrop-blur component.
 
+### Feedback
+
+#### `BrainLoader`
+
+The branded brain-shaped loading indicator, announced to assistive technology as a
+polite status with a screen-reader `label`. Set `fading` once the content has
+arrived to fade it out over `motionDurations.loader`.
+
+Use it for every application loading state instead of creating another spinner.
+Pair it with `waitForBrainLoaderLeadIn` and `waitForBrainLoaderFade` from
+`src/loading.ts` when a feature needs to sequence content after the loader. It is
+not for short inline busy states such as the search icon pulse.
+
 ### Motion
 
 #### `PageTransition`
@@ -210,14 +224,13 @@ the hook themselves.
 
 ## Feature components
 
-These components own application workflows. Reuse or extend them when working in
+These live in `src/features` and own application workflows. Reuse or extend them when working in
 their area; do not move them into the component library unless they become independent
 of Headspace domain state and APIs.
 
 | Component | Responsibility and reuse boundary |
 | --- | --- |
-| `AuthFlow` | Complete login and multi-step signup flow. Add authentication/onboarding steps here rather than creating a parallel flow. |
-| `BrainLoader` | Shared branded loading indicator. Reuse for application loading states instead of creating another spinner. |
+| `AuthFlow` | Stored-session check (shown as `BrainLoader`), login, and multi-step signup flow. Add authentication/onboarding steps here rather than creating a parallel flow. |
 | `SearchInterface` | Search input and submission UI. Extend for search-entry behavior; results belong to `ResultInterface`. |
 | `ResultInterface` | Search results, graph result states, and relationship overlay coordination. |
 | `NeighborhoodGraph` | Force-directed canvas graph and its graph-specific interaction/measurement behavior. Its physics are not general UI motion. |

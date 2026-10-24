@@ -19,6 +19,6 @@ When a genuinely new reusable component is needed:
 2. Export it from the category barrel and `src/component-library/index.ts`.
 3. Add its intended use and boundaries to `COMPONENT_REGISTRY.md` in the same change.
 
-Feature-specific components stay in `src/components`. Check the feature component
+Feature-specific components stay in `src/features`. Check the feature component
 inventory in the registry before adding another one, and extend an existing feature
 component when it already owns the workflow.

@@ -1367,16 +1367,6 @@ textarea:focus {
   background: #fbfaf7;
 }
 
-.auth-brand {
-  position: relative;
-  z-index: 1;
-  align-self: start;
-  color: #4b4942;
-  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
-  font-size: 1rem;
-  letter-spacing: 0.03em;
-}
-
 .auth-card {
   position: relative;
   z-index: 1;
@@ -1607,18 +1597,6 @@ textarea:focus {
 
 .auth-progress span.is-active {
   background: #4c4942;
-}
-
-.auth-checking {
-  place-items: center;
-  color: #8c877d;
-  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
-}
-
-.auth-checking .auth-brand {
-  position: absolute;
-  top: 32px;
-  left: clamp(22px, 5vw, 64px);
 }
 
 .session-logout {

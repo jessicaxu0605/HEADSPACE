@@ -1,5 +1,5 @@
-import { FadeTransition } from "../component-library";
-import { BRAIN_LOADER_FADE_MS } from "../loading";
+import FadeTransition from "./motion/FadeTransition";
+import { motionDurations } from "./motion/tokens";
 
 type BrainLoaderProps = {
   fading?: boolean;
@@ -13,7 +13,7 @@ export default function BrainLoader({
   return (
     <FadeTransition
       className="brain-loader"
-      duration={BRAIN_LOADER_FADE_MS}
+      duration={motionDurations.loader}
       visible={!fading}
       role="status"
       aria-live="polite"

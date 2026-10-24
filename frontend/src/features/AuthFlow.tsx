@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
+  clearAccessToken,
   createUser,
+  getAccessToken,
+  getCurrentSession,
   login,
   setAccessToken,
   type CreateUserInput,
 } from "../api";
 import { ABOUT_PROMPTS } from "../auth_prompts";
 import {
+  BrainLoader,
   PageTransition,
   PresenceTransition,
   TextButton,
@@ -14,7 +18,13 @@ import {
   ValidatedTextField,
 } from "../component-library";
 
-type AuthPage = "welcome" | "login" | "credentials" | "profile" | "about";
+type AuthPage =
+  | "checking"
+  | "welcome"
+  | "login"
+  | "credentials"
+  | "profile"
+  | "about";
 type AuthStatusTarget =
   | "login-email"
   | "login-password"
@@ -50,7 +60,11 @@ const requiredWarning = (value: string, label: string): string =>
   value.trim() ? "" : `Enter your ${label}.`;
 
 export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
-  const [page, setPage] = useState<AuthPage>("welcome");
+  // A stored token is verified before anything else is shown; without one the
+  // flow starts at the welcome page.
+  const [page, setPage] = useState<AuthPage>(() =>
+    getAccessToken() ? "checking" : "welcome",
+  );
   const [signup, setSignup] = useState<CreateUserInput>(emptySignup);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -59,6 +73,24 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
   const [statusTarget, setStatusTarget] = useState<AuthStatusTarget>(null);
   const [submitting, setSubmitting] = useState(false);
   const aboutTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const onAuthenticatedRef = useRef(onAuthenticated);
+  onAuthenticatedRef.current = onAuthenticated;
+
+  useEffect(() => {
+    if (page !== "checking") return;
+    let active = true;
+    getCurrentSession()
+      .then(() => {
+        if (active) onAuthenticatedRef.current();
+      })
+      .catch(() => {
+        clearAccessToken();
+        if (active) setPage("welcome");
+      });
+    return () => {
+      active = false;
+    };
+  }, [page]);
 
   useEffect(() => {
     if (page !== "about") return;
@@ -175,6 +207,10 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
         pageKey={page}
       >
         <>
+          {page === "checking" && (
+            <BrainLoader label="Opening your headspace…" />
+          )}
+
           {page === "welcome" && (
         <section className="auth-card auth-welcome" aria-labelledby="auth-title">
           <div className="auth-welcome-kicker">get in the right</div>
