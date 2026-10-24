@@ -153,6 +153,29 @@ class WorkspaceApiTests(unittest.TestCase):
             workspaces[1]["created_by_user_id"], str(shared.created_by_user_id)
         )
         self.assertIsNone(response.json()["last_used_workspace_id"])
+        # Without any memory edits, a workspace was last edited when created.
+        self.assertEqual(workspaces[0]["last_edited_at"], workspaces[0]["created_at"])
+
+    def test_lists_when_each_workspace_was_last_edited(self):
+        authenticated = _authenticated()
+        last_edited_at = datetime(2026, 10, 20, 9, 30, tzinfo=UTC)
+        store = FakeWorkspaceStore(
+            [
+                MemberWorkspace(
+                    _workspace("Personal"), "owner", last_edited_at=last_edited_at
+                )
+            ]
+        )
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).get("/api/v1/workspaces")
+
+        self.assertEqual(
+            response.json()["workspaces"][0]["last_edited_at"], "2026-10-20T09:30:00Z"
+        )
 
     def test_lists_most_recently_used_workspace(self):
         authenticated = _authenticated()
@@ -232,6 +255,7 @@ class PostgresWorkspaceStoreTests(unittest.IsolatedAsyncioTestCase):
                 "created_at": workspace.created_at,
                 "role": "editor",
                 "last_used_at": None,
+                "last_edited_at": workspace.created_at,
             }
         ]
 
@@ -266,8 +290,13 @@ class PostgresWorkspaceStoreTests(unittest.IsolatedAsyncioTestCase):
                 user_id=user_id
             )
 
-        self.assertEqual(listed, [MemberWorkspace(workspace, "editor")])
+        self.assertEqual(
+            listed,
+            [MemberWorkspace(workspace, "editor", last_edited_at=workspace.created_at)],
+        )
         query, params = connection.calls[0]
+        self.assertIn("max(n.updated_at)", query)
+        self.assertIn("max(e.updated_at)", query)
         self.assertIn("wm.removed_at IS NULL", query)
         self.assertIn("w.deleted_at IS NULL", query)
         self.assertEqual(params, (user_id,))

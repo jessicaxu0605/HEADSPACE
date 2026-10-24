@@ -1,4 +1,4 @@
-import { PresenceTransition, TextButton, motionStaggers } from "../component-library";
+import { PresenceTransition, motionStaggers } from "../component-library";
 import type { Workspace } from "../api";
 
 type WorkspaceSelectionProps = {
@@ -7,53 +7,51 @@ type WorkspaceSelectionProps = {
   onLogout: () => void;
 };
 
-const createdLabel = (workspace: Workspace): string =>
-  new Date(workspace.created_at).toLocaleDateString(undefined, {
+const lastEditedLabel = (workspace: Workspace): string =>
+  new Date(workspace.last_edited_at).toLocaleDateString(undefined, {
     year: "numeric",
-    month: "long",
+    month: "short",
+    day: "numeric",
   });
 
-// Shown when the signed-in user has no current or remembered workspace. Choosing one makes it active and opens its landing page.
+// Shown when the signed-in user has no current or remembered workspace.
+// Choosing one makes it active and opens its landing page.
 export default function WorkspaceSelection({
   workspaces,
   onSelect,
   onLogout,
 }: WorkspaceSelectionProps) {
   return (
-    <main className="auth-shell">
-      <section
-        className="auth-card auth-welcome workspace-selection"
-        aria-labelledby="workspace-selection-title"
-      >
-        <h1 id="workspace-selection-title">Choose a headspace</h1>
-        <ul className="workspace-selection-list">
-          {workspaces.map((workspace, index) => (
-            <PresenceTransition
-              as="li"
-              key={workspace.id}
-              enter="fade-up"
-              enterDelay={Math.min(index, 5) * motionStaggers.standard}
-              visible
+    <main className="workspace-selection" aria-labelledby="workspace-selection-title">
+      <button className="session-logout" type="button" onClick={onLogout}>
+        log out
+      </button>
+      <h1 id="workspace-selection-title" className="workspace-selection-title">
+        what HEADSPACE are you in today?
+      </h1>
+      <ul className="workspace-selection-list">
+        {workspaces.map((workspace, index) => (
+          <PresenceTransition
+            as="li"
+            key={workspace.id}
+            enter="fade-up"
+            enterDelay={Math.min(index, 5) * motionStaggers.standard}
+            visible
+          >
+            <button
+              className="workspace-selection-card"
+              type="button"
+              onClick={() => onSelect(workspace.id)}
             >
-              <button
-                className="workspace-selection-button"
-                type="button"
-                onClick={() => onSelect(workspace.id)}
-              >
-                <span className="workspace-selection-name">{workspace.name}</span>
-                <span className="workspace-selection-meta">
-                  {workspace.role} · created {createdLabel(workspace)}
-                </span>
-              </button>
-            </PresenceTransition>
-          ))}
-        </ul>
-        <div className="auth-entry-actions">
-          <TextButton className="auth-entry-action" onClick={onLogout}>
-            log out
-          </TextButton>
-        </div>
-      </section>
+              <span className="workspace-selection-name">{workspace.name}</span>
+              <span className="workspace-selection-meta">
+                <span>last edited {lastEditedLabel(workspace)}</span>
+                <span>{workspace.role}</span>
+              </span>
+            </button>
+          </PresenceTransition>
+        ))}
+      </ul>
     </main>
   );
 }

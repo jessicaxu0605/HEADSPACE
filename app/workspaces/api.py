@@ -45,10 +45,15 @@ class WorkspaceResponse(BaseModel):
     created_by_user_id: UUID
     role: WorkspaceRole
     created_at: datetime
+    # The newest change to the workspace's memory nodes or edges.
+    last_edited_at: datetime
 
     @classmethod
     def from_workspace(
-        cls, workspace: Workspace, role: WorkspaceRole
+        cls,
+        workspace: Workspace,
+        role: WorkspaceRole,
+        last_edited_at: datetime | None = None,
     ) -> "WorkspaceResponse":
         return cls(
             id=workspace.id,
@@ -56,13 +61,18 @@ class WorkspaceResponse(BaseModel):
             created_by_user_id=workspace.created_by_user_id,
             role=role,
             created_at=workspace.created_at,
+            last_edited_at=last_edited_at or workspace.created_at,
         )
 
     @classmethod
     def from_member_workspace(
         cls, member_workspace: MemberWorkspace
     ) -> "WorkspaceResponse":
-        return cls.from_workspace(member_workspace.workspace, member_workspace.role)
+        return cls.from_workspace(
+            member_workspace.workspace,
+            member_workspace.role,
+            member_workspace.last_edited_at,
+        )
 
 
 class CreateWorkspaceResponse(BaseModel):

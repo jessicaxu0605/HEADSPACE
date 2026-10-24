@@ -172,7 +172,16 @@ class PostgresWorkspaceStore:
                 await conn.execute(
                     """
                     SELECT w.id, w.name, w.created_by_user_id, w.created_at,
-                           wm.role, wm.last_used_at
+                           wm.role, wm.last_used_at,
+                           COALESCE(
+                               GREATEST(
+                                   (SELECT max(n.updated_at) FROM memory_node AS n
+                                    WHERE n.workspace_id = w.id),
+                                   (SELECT max(e.updated_at) FROM memory_edge AS e
+                                    WHERE e.workspace_id = w.id)
+                               ),
+                               w.created_at
+                           ) AS last_edited_at
                     FROM workspace_member AS wm
                     JOIN workspaces AS w
                       ON w.id = wm.workspace_id AND w.deleted_at IS NULL
@@ -193,6 +202,7 @@ class PostgresWorkspaceStore:
                 ),
                 role=cast(WorkspaceRole, row["role"]),
                 last_used_at=row["last_used_at"],
+                last_edited_at=row["last_edited_at"],
             )
             for row in rows
         ]

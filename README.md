@@ -125,7 +125,9 @@ so workspace-scoped endpoints work immediately after the first login.
 `GET /api/v1/workspaces` requires a bearer token and returns
 `{"workspaces": [...], "last_used_workspace_id": ...}`: every live workspace in
 which the caller has an active membership, each with that membership's `role`
-(`owner`, `editor`, or `viewer`), ordered by when the caller joined, plus the
+(`owner`, `editor`, or `viewer`) and a `last_edited_at` reflecting the latest
+change to its memory nodes or edges (its creation time until the first edit),
+ordered by when the caller joined, plus the
 listed workspace the caller opened most recently (or `null`). Clients use it to
 choose the `workspace_id` for scoped requests, showing a workspace picker when
 there is no last-used workspace.

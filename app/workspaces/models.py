@@ -33,6 +33,9 @@ class MemberWorkspace:
     workspace: Workspace
     role: WorkspaceRole
     last_used_at: datetime | None = None
+    # When any of the workspace's memory nodes or edges last changed (its
+    # creation time until then). Not the workspace row's own updated_at.
+    last_edited_at: datetime | None = None
 
 
 @dataclass(frozen=True)

@@ -238,7 +238,7 @@ of Headspace domain state and APIs.
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
 | `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
 | `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. |
-| `WorkspaceSelection` | Signed-in screen listing the user's workspaces when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. |
+| `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. |
 | `WorkspaceUnavailable` | Signed-in screen for an account whose workspaces failed to load or that has no active membership. |
 
 Small render helpers that are private to one feature, such as memory cards inside

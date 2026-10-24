@@ -65,6 +65,8 @@ export type Workspace = {
   created_by_user_id: string;
   role: WorkspaceRole;
   created_at: string;
+  // The latest change to the workspace's memory nodes or edges.
+  last_edited_at: string;
 };
 
 export type CreateUserInput = {
