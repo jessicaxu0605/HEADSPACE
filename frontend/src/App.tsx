@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   clearAccessToken,
   getAccessToken,
@@ -11,6 +11,7 @@ import ResultInterface from "./components/ResultInterface";
 import SearchInterface from "./components/SearchInterface";
 import SurfacedMemories from "./components/SurfacedMemories";
 import TextEntryInterface from "./components/TextEntryInterface";
+import { PageTransition } from "./component-library";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "./memory_graph";
 
@@ -41,26 +42,36 @@ export default function App() {
     };
   }, []);
 
+  let content: ReactNode;
   if (authStatus === "checking") {
-    return (
+    content = (
       <main className="auth-shell auth-checking" aria-label="Loading your headspace">
         <div className="auth-brand">headspace</div>
         <p>opening your headspace…</p>
       </main>
     );
-  }
-
-  if (authStatus === "unauthenticated") {
-    return <AuthFlow onAuthenticated={() => setAuthStatus("authenticated")} />;
+  } else if (authStatus === "unauthenticated") {
+    content = (
+      <AuthFlow onAuthenticated={() => setAuthStatus("authenticated")} />
+    );
+  } else {
+    content = (
+      <AuthenticatedApp
+        onLogout={() => {
+          clearAccessToken();
+          setAuthStatus("unauthenticated");
+        }}
+      />
+    );
   }
 
   return (
-    <AuthenticatedApp
-      onLogout={() => {
-        clearAccessToken();
-        setAuthStatus("unauthenticated");
-      }}
-    />
+    <PageTransition
+      className="app-state-transition"
+      pageKey={authStatus}
+    >
+      {content}
+    </PageTransition>
   );
 }
 
@@ -77,6 +88,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
+  const restoreResultsFocusRef = useRef(false);
   const graphExplorer = useNeighborhoodExplorer();
 
   useEffect(
@@ -155,16 +167,8 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   };
 
   const backToResults = (): void => {
+    restoreResultsFocusRef.current = true;
     graphExplorer.close();
-    // Focusing the empty search would hide the surfaced memories, so only
-    // return focus there when search results are showing.
-    const showingSearch = matches.length > 0 || searchStatus !== "";
-    window.requestAnimationFrame(() =>
-      (
-        selectedButtonRef.current ??
-        (showingSearch ? searchInputRef.current : null)
-      )?.focus(),
-    );
   };
 
   const openEntry = (): void => {
@@ -200,7 +204,25 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
     searchFocused || matches.length > 0 || searchStatus !== "";
 
   return (
-    <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
+    <PageTransition
+      appear={false}
+      className="authenticated-page-transition"
+      pageKey={isGraphPage ? "graph" : "landing"}
+      onSwitched={(transitionKey) => {
+        if (transitionKey !== "landing" || !restoreResultsFocusRef.current) {
+          return;
+        }
+        restoreResultsFocusRef.current = false;
+        // Focusing an empty search would hide surfaced memories, so only
+        // return there when search feedback is already being shown.
+        const showingSearch = matches.length > 0 || searchStatus !== "";
+        (
+          selectedButtonRef.current ??
+          (showingSearch ? searchInputRef.current : null)
+        )?.focus();
+      }}
+    >
+      <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
       <button className="session-logout" type="button" onClick={onLogout}>
         log out
       </button>
@@ -264,6 +286,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
         textareaRef={textareaRef}
         onViewRun={viewRun}
       />
-    </main>
+      </main>
+    </PageTransition>
   );
 }

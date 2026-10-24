@@ -31,6 +31,13 @@ html {
   width: 100%;
 }
 
+.app-state-transition,
+.authenticated-page-transition {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
 .screen {
   min-height: 100vh;
   min-height: 100svh;
@@ -90,7 +97,6 @@ html {
 
 .search-result {
   border-bottom: 1px solid #ebe9e4;
-  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .search-result-button,
@@ -117,22 +123,6 @@ html {
   padding-left: 42px;
   background: #faf9f7;
   outline: 0;
-}
-
-.search-result:nth-child(2) {
-  animation-delay: 45ms;
-}
-
-.search-result:nth-child(3) {
-  animation-delay: 90ms;
-}
-
-.search-result:nth-child(4) {
-  animation-delay: 135ms;
-}
-
-.search-result:nth-child(5) {
-  animation-delay: 180ms;
 }
 
 .search-result-title,
@@ -174,7 +164,6 @@ html {
 
 .graph-view {
   padding-top: 4px;
-  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .graph-view[hidden] {
@@ -232,14 +221,6 @@ html {
   display: block;
   width: clamp(56px, 6vw, 80px);
   height: auto;
-}
-
-.brain-loader.is-fading {
-  animation: brain-loader-fade-out 400ms ease-out both;
-}
-
-.is-revealing {
-  animation: content-reveal 400ms ease-out both;
 }
 
 .graph-header {
@@ -489,12 +470,10 @@ h1 {
   letter-spacing: -0.045em;
   line-height: 0.98;
   text-wrap: balance;
-  animation: soften-in 2.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .ingestion-form {
   margin-top: 0;
-  animation: soften-in 1s 120ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .text-entry {
@@ -626,47 +605,7 @@ textarea:focus {
   letter-spacing: -0.01em;
   text-align: left;
   text-decoration: none;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(6px);
-  transition:
-    opacity 520ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 300ms ease,
-    transform 520ms cubic-bezier(0.16, 1, 0.3, 1),
-    visibility 0s linear 520ms;
-}
-
-.text-button.is-visible {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
-  transition-duration: 1.8s, 300ms, 1.8s, 0s;
-  transition-delay: 0s;
-}
-
-#submit-button:not(.is-visible) {
-  transition-duration: 900ms, 300ms, 900ms, 0s;
-  transition-delay: 0s, 0s, 0s, 900ms;
-}
-
-.text-button.is-loading::before {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  inset: -0.3em -0.8em;
-  background: linear-gradient(
-    105deg,
-    transparent 30%,
-    rgba(255, 255, 255, 0.08) 41%,
-    rgba(255, 255, 255, 0.55) 50%,
-    rgba(255, 255, 255, 0.08) 59%,
-    transparent 70%
-  );
-  filter: blur(5px);
-  pointer-events: none;
-  transform: translateX(-150%);
-  will-change: transform;
-  animation: button-gloss 1.8s ease-in-out infinite;
+  transition: color 300ms ease;
 }
 
 .text-button::after {
@@ -697,14 +636,6 @@ textarea:focus {
   opacity: 0.45;
 }
 
-.text-button.is-loading:disabled {
-  opacity: 1;
-}
-
-.text-button.is-loading::after {
-  transform: scaleX(0);
-}
-
 .status {
   max-width: 520px;
   margin: 24px auto 0;
@@ -715,7 +646,6 @@ textarea:focus {
   font-size: 0.9rem;
   line-height: 1.5;
   text-wrap: balance;
-  animation: status-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .entry > .status {
@@ -759,12 +689,6 @@ textarea:focus {
   font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
   scrollbar-width: none;
   text-align: left;
-  animation: notification-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.notification.is-closing {
-  pointer-events: none;
-  animation: notification-out 320ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 .notification.error {
@@ -841,84 +765,6 @@ textarea:focus {
   }
 }
 
-@keyframes button-gloss {
-  from {
-    transform: translateX(-150%);
-  }
-
-  to {
-    transform: translateX(150%);
-  }
-}
-
-@keyframes status-in {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes notification-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes notification-out {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-
-  to {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-}
-
-@keyframes result-in {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes brain-loader-fade-out {
-  from {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes content-reveal {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
 @keyframes search-pulse {
   from {
     opacity: 0.35;
@@ -931,14 +777,18 @@ textarea:focus {
 
 /* The relationship page covers the graph so the graph keeps its layout underneath. */
 .relationship-page {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 20;
   padding: 32px clamp(24px, 4vw, 56px) 72px;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: #fff;
-  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.relationship-page-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
 }
 
 .relationship-inner {
@@ -1122,7 +972,6 @@ textarea:focus {
   display: grid;
   gap: 18px;
   padding-bottom: clamp(28px, 5vw, 48px);
-  animation: soften-in 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .surfaced-status {
@@ -1145,22 +994,6 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 4px 12px;
-}
-
-.memory-card {
-  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.memory-cards .memory-card:nth-child(2) {
-  animation-delay: 60ms;
-}
-
-.memory-cards .memory-card:nth-child(3) {
-  animation-delay: 120ms;
-}
-
-.memory-cards .memory-card:nth-child(n + 4) {
-  animation-delay: 180ms;
 }
 
 .memory-card-button,
@@ -1201,7 +1034,6 @@ textarea:focus {
   display: grid;
   gap: 2px;
   padding: 14px 0 6px;
-  animation: result-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .upcoming-card-title {
@@ -1329,6 +1161,7 @@ textarea:focus {
 
   .page-stack.is-graph-page .search-wrap,
   .graph-view,
+  .graph-body-transition,
   .graph-body,
   .graph-section {
     display: flex;
@@ -1337,6 +1170,7 @@ textarea:focus {
   }
 
   .graph-view,
+  .graph-body-transition,
   .graph-body,
   .graph-section,
   .graph-canvas {
@@ -1417,6 +1251,7 @@ textarea:focus {
 
   .page-stack.is-graph-page .search-wrap,
   .graph-view,
+  .graph-body-transition,
   .graph-body,
   .graph-section {
     display: flex;
@@ -1425,6 +1260,7 @@ textarea:focus {
   }
 
   .graph-view,
+  .graph-body-transition,
   .graph-body,
   .graph-section,
   .graph-canvas {
@@ -1485,14 +1321,9 @@ textarea:focus {
     scroll-behavior: auto;
   }
 
-  h1,
   .search-wrap,
   .continue-wrap,
-  .continue-button,
-  .ingestion-form,
-  .surfaced-memories-content,
-  .memory-card,
-  .upcoming-card {
+  .continue-button {
     animation: none;
   }
 
@@ -1504,21 +1335,12 @@ textarea:focus {
     transition: opacity 200ms ease;
   }
 
-  .text-button.is-loading::before,
-  .status,
-  .notification,
-  .search-result,
-  .graph-view,
-  .brain-loader.is-fading,
-  .is-revealing,
-  .relationship-page,
   .search-form.is-loading .search-icon {
     animation: none;
   }
 
   textarea,
   .empty-prompt,
-  .text-button,
   .text-button.continue-button.is-search-active,
   .text-button::after,
   .search-result-button,
@@ -1556,7 +1378,11 @@ textarea:focus {
   align-self: center;
   width: min(100%, 560px);
   margin: 24px auto 72px;
-  animation: auth-page-in 540ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-page-transition {
+  align-self: center;
+  width: 100%;
 }
 
 .auth-welcome {
@@ -1662,8 +1488,7 @@ textarea:focus {
   min-width: 0;
 }
 
-.auth-login-fields input,
-.auth-signup-fields input {
+.text-field-input {
   width: 100%;
   padding: 0 0 10px;
   color: #34332f;
@@ -1681,14 +1506,12 @@ textarea:focus {
   transition: border-color 180ms ease;
 }
 
-.auth-login-fields input::placeholder,
-.auth-signup-fields input::placeholder {
+.text-field-input::placeholder {
   color: #aaa7a0;
   opacity: 1;
 }
 
-.auth-login-fields input:focus,
-.auth-signup-fields input:focus {
+.text-field-input:focus {
   border-bottom-color: #68645c;
 }
 
@@ -1905,7 +1728,6 @@ textarea:focus {
   font-size: 1rem;
   font-style: italic;
   line-height: 1.55;
-  animation: prompt-in 500ms ease both;
 }
 
 .auth-about .auth-form {
@@ -1917,7 +1739,42 @@ textarea:focus {
   color: #8c8981;
   font-size: 0.86rem;
   line-height: 1.5;
-  animation: status-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.presence-transition {
+  opacity: 0;
+  pointer-events: none;
+  transform: none;
+  transition-property: opacity, transform;
+}
+
+.presence-transition.is-entering {
+  transition-delay: var(--presence-enter-delay, 0ms);
+  transition-duration: var(--presence-enter-duration, 240ms);
+  transition-timing-function: var(--presence-enter-easing, ease);
+}
+
+.presence-transition.is-entered {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition-delay: var(--presence-enter-delay, 0ms);
+  transition-duration: var(--presence-enter-duration, 240ms);
+  transition-timing-function: var(--presence-enter-easing, ease);
+}
+
+.presence-transition.is-exiting {
+  transition-delay: var(--presence-exit-delay, 0ms);
+  transition-duration: var(--presence-exit-duration, 240ms);
+  transition-timing-function: var(--presence-exit-easing, ease);
+}
+
+.presence-transition.is-entering.enter-fade-up {
+  transform: translateY(var(--presence-distance, 12px));
+}
+
+.presence-transition.is-exiting.exit-fade-up {
+  transform: translateY(calc(-1 * var(--presence-distance, 12px)));
 }
 
 .auth-skip {
@@ -1972,28 +1829,6 @@ textarea:focus {
   font-size: 0.82rem;
 }
 
-@keyframes auth-page-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes prompt-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 620px) {
   .auth-shell {
     padding: 24px 20px;
@@ -2018,15 +1853,11 @@ textarea:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .auth-card,
-  .auth-prompt {
-    animation: none;
-  }
-
   .auth-primary,
   .auth-secondary,
   .auth-form input,
-  .auth-form textarea {
-    transition-duration: 0.01ms;
+  .auth-form textarea,
+  .presence-transition {
+    transition-duration: 0.01ms !important;
   }
 }

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { getLandingMemories } from "../api";
+import {
+  PresenceTransition,
+  motionStaggers,
+} from "../component-library";
 import type {
   MemoryLanding,
   MemoryLandingCard,
@@ -70,9 +74,11 @@ const focusNode = (card: MemoryLandingCard): MemoryNodeReference | undefined =>
 
 function MemoryCard({
   card,
+  index,
   onOpenNode,
 }: {
   card: MemoryLandingCard;
+  index: number;
   onOpenNode: (selection: MemoryNodeReference) => void;
 }) {
   const edge = anchorEdge(card);
@@ -89,7 +95,14 @@ function MemoryCard({
   const target = focusNode(card);
 
   return (
-    <li className="memory-card">
+    <PresenceTransition
+      as="li"
+      className="memory-card"
+      enter="fade-up"
+      enterDelay={Math.min(index, 3) * motionStaggers.standard}
+      exit="fade-up"
+      visible
+    >
       <button
         className="memory-card-button"
         type="button"
@@ -115,7 +128,7 @@ function MemoryCard({
           </span>
         )}
       </button>
-    </li>
+    </PresenceTransition>
   );
 }
 
@@ -155,7 +168,14 @@ function UpcomingCard({
   onOpenNode: (selection: MemoryNodeReference) => void;
 }) {
   return (
-    <section className="upcoming-card" aria-labelledby="upcoming-card-title">
+    <PresenceTransition
+      as="section"
+      className="upcoming-card"
+      aria-labelledby="upcoming-card-title"
+      enter="fade-up"
+      exit="fade-up"
+      visible
+    >
       <h2 id="upcoming-card-title" className="memory-kicker upcoming-card-title">
         upcoming
       </h2>
@@ -194,7 +214,7 @@ function UpcomingCard({
           );
         })}
       </ul>
-    </section>
+    </PresenceTransition>
   );
 }
 
@@ -238,14 +258,24 @@ export default function SurfacedMemories({
       inert={hidden}
     >
       <div className="surfaced-memories-inner">
-        {failed && (
-          <p className="surfaced-status">couldn’t surface any memories.</p>
-        )}
-        {empty && (
-          <p className="surfaced-status">
-            nothing to surface yet. add a thought below.
-          </p>
-        )}
+        <PresenceTransition
+          as="p"
+          className="surfaced-status"
+          enter="fade-up"
+          exit="fade-up"
+          visible={failed}
+        >
+          couldn’t surface any memories.
+        </PresenceTransition>
+        <PresenceTransition
+          as="p"
+          className="surfaced-status"
+          enter="fade-up"
+          exit="fade-up"
+          visible={empty}
+        >
+          nothing to surface yet. add a thought below.
+        </PresenceTransition>
         {landing !== null && !empty && (
           <div className="surfaced-memories-content">
             {upcoming.length > 0 && (
@@ -253,10 +283,11 @@ export default function SurfacedMemories({
             )}
             {memories.length > 0 && (
               <ul className="memory-cards">
-                {memories.map((card) => (
+                {memories.map((card, index) => (
                   <MemoryCard
                     key={card.anchor.id}
                     card={card}
+                    index={index}
                     onOpenNode={onOpenNode}
                   />
                 ))}

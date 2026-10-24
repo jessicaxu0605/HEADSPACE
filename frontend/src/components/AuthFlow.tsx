@@ -6,8 +6,12 @@ import {
   type CreateUserInput,
 } from "../api";
 import { ABOUT_PROMPTS } from "../auth_prompts";
-import AutoGrowingTextArea from "./AutoGrowingTextArea";
-import ValidatedTextField, { InlineWarning } from "./ValidatedTextField";
+import {
+  PageTransition,
+  PresenceTransition,
+  ValidatedTextArea,
+  ValidatedTextField,
+} from "../component-library";
 
 type AuthPage = "welcome" | "login" | "credentials" | "profile" | "about";
 type AuthStatusTarget =
@@ -164,7 +168,13 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
 
   return (
     <main className="auth-shell">
-      {page === "welcome" && (
+      <PageTransition
+        appear={false}
+        className="auth-page-transition"
+        pageKey={page}
+      >
+        <>
+          {page === "welcome" && (
         <section className="auth-card auth-welcome" aria-labelledby="auth-title">
           <div className="auth-welcome-kicker">get in the right</div>
           <h1 id="auth-title">HEADSPACE</h1>
@@ -177,9 +187,9 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
             </button>
           </div>
         </section>
-      )}
+          )}
 
-      {page === "login" && (
+          {page === "login" && (
         <section className="auth-card auth-login" aria-labelledby="login-title">
           <h1 id="login-title">Welcome back</h1>
           <form
@@ -237,9 +247,9 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
             </div>
           </form>
         </section>
-      )}
+          )}
 
-      {page === "credentials" && (
+          {page === "credentials" && (
         <section className="auth-card auth-signup" aria-labelledby="credentials-title">
           <h1 id="credentials-title">Start with the basics</h1>
           <form
@@ -290,9 +300,9 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
             </div>
           </form>
         </section>
-      )}
+          )}
 
-      {page === "profile" && (
+          {page === "profile" && (
         <section className="auth-card auth-signup" aria-labelledby="profile-title">
           <h1 id="profile-title">Tell me about yourself</h1>
           <form
@@ -341,34 +351,41 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
             </div>
           </form>
         </section>
-      )}
+          )}
 
-      {page === "about" && (
+          {page === "about" && (
         <section
           className="auth-card auth-signup auth-about"
           aria-labelledby="about-title"
         >
           <h1 id="about-title">What else is worth knowing?</h1>
-          <p className="auth-prompt" aria-live="polite" key={promptIndex}>
+          <PresenceTransition
+            as="p"
+            className="auth-prompt"
+            aria-live="polite"
+            enter="fade-up"
+            exit="fade-up"
+            key={promptIndex}
+            visible
+          >
             {ABOUT_PROMPTS[promptIndex]}
-          </p>
+          </PresenceTransition>
           <form
             className="auth-signup-form"
             noValidate
             onSubmit={(event) => void finishSignup(event)}
           >
-            <AutoGrowingTextArea
+            <ValidatedTextArea
               textareaRef={aboutTextareaRef}
               value={signup.about ?? ""}
               onValueChange={(about) => updateSignup({ about })}
+              validate={() => ""}
+              externalWarning={statusTarget === "about" ? status : ""}
               ariaLabel="About you"
               emptyPrompt="about you"
               maxLength={2000}
               autoFocus
               className="auth-about-entry"
-            />
-            <InlineWarning
-              message={statusTarget === "about" ? status : ""}
             />
             <div className="auth-signup-actions auth-signup-actions-wide">
               <button
@@ -392,15 +409,19 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
             </div>
           </form>
         </section>
-      )}
+          )}
 
-      {(["credentials", "profile", "about"] as AuthPage[]).includes(page) && (
-        <div className="auth-progress" aria-hidden="true">
-          {["credentials", "profile", "about"].map((step) => (
-            <span key={step} className={step === page ? "is-active" : ""} />
-          ))}
-        </div>
-      )}
+          {(["credentials", "profile", "about"] as AuthPage[]).includes(
+            page,
+          ) && (
+            <div className="auth-progress" aria-hidden="true">
+              {["credentials", "profile", "about"].map((step) => (
+                <span key={step} className={step === page ? "is-active" : ""} />
+              ))}
+            </div>
+          )}
+        </>
+      </PageTransition>
     </main>
   );
 }

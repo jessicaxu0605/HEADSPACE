@@ -1,5 +1,7 @@
+import { motionDurations } from "./component-library/motion/tokens";
+
 const BRAIN_LOADER_LEAD_IN_MS = 2_000;
-const BRAIN_LOADER_FADE_MS = 400;
+export const BRAIN_LOADER_FADE_MS = motionDurations.loader;
 
 const wait = async (durationMs: number): Promise<void> => {
   if (durationMs <= 0) return;

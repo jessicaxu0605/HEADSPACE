@@ -15,5 +15,6 @@ venv/
 .secrets/
 
 AGENTS.md
+!frontend/AGENTS.md
 
 INGEST_HANDOFF.md

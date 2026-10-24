@@ -7,8 +7,12 @@ import {
   type RefObject,
 } from "react";
 import { createManualIngestion } from "../api";
-import AutoGrowingTextArea from "./AutoGrowingTextArea";
-import BlurredContainer from "./BlurredContainer";
+import {
+  AutoGrowingTextArea,
+  BlurredContainer,
+  PresenceTransition,
+  motionDurations,
+} from "../component-library";
 
 type TextEntryInterfaceProps = {
   sectionRef: RefObject<HTMLElement | null>;
@@ -61,7 +65,6 @@ export default function TextEntryInterface({
   >(new Set());
   const [showSubmit, setShowSubmit] = useState(false);
   const revealButtonTimeoutRef = useRef<number | undefined>(undefined);
-  const dismissTimeoutsRef = useRef<Map<string, number>>(new Map());
   const isMountedRef = useRef(true);
   const hasText = Boolean(content.trim());
 
@@ -85,37 +88,22 @@ export default function TextEntryInterface({
     return () => {
       isMountedRef.current = false;
       window.clearTimeout(revealButtonTimeoutRef.current);
-      dismissTimeoutsRef.current.forEach((timeoutId) =>
-        window.clearTimeout(timeoutId),
-      );
-      dismissTimeoutsRef.current.clear();
     };
   }, []);
 
-  const dismissNotification = useCallback((id: string): void => {
-    const removeNotification = (): void => {
-      setNotifications((current) =>
-        current.filter((notification) => notification.id !== id),
-      );
-      setClosingNotificationIds((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-      dismissTimeoutsRef.current.delete(id);
-    };
-
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      removeNotification();
-      return;
-    }
-    if (dismissTimeoutsRef.current.has(id)) return;
-
-    setClosingNotificationIds((current) => new Set(current).add(id));
-    dismissTimeoutsRef.current.set(
-      id,
-      window.setTimeout(removeNotification, 320),
+  const removeNotification = useCallback((id: string): void => {
+    setNotifications((current) =>
+      current.filter((notification) => notification.id !== id),
     );
+    setClosingNotificationIds((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+  }, []);
+
+  const dismissNotification = useCallback((id: string): void => {
+    setClosingNotificationIds((current) => new Set(current).add(id));
   }, []);
 
   const submitInBackground = useCallback(
@@ -198,77 +186,101 @@ export default function TextEntryInterface({
       className="entry screen"
       aria-label="Add a thought"
     >
-      <form className="ingestion-form" onSubmit={handleSubmit}>
-        <AutoGrowingTextArea
-          textareaRef={textareaRef}
-          value={content}
-          onValueChange={setContent}
-          ariaLabel="Your thought"
-          emptyPrompt={starterPrompt}
-          id="content"
-          name="content"
-          required
-        />
-        <button
-          id="submit-button"
-          className={`text-button${showSubmit ? " is-visible" : ""}`}
-          type="submit"
-          aria-hidden={!showSubmit}
-          tabIndex={showSubmit ? 0 : -1}
-        >
-          remember this&nbsp; →
-        </button>
-      </form>
-      <div className="notification-stack" aria-live="polite">
-        {notifications.map((notification) => (
-          <BlurredContainer
-            blurredEdges={["top", "right", "bottom", "left"]}
-            edgeBlurSize={18}
-            className={`notification ${notification.state}${closingNotificationIds.has(notification.id) ? " is-closing" : ""}`}
-            key={notification.id}
-            role={notification.state === "error" ? "alert" : "status"}
+      <PresenceTransition
+        enter="fade-up"
+        exit="fade-up"
+        visible
+      >
+        <form className="ingestion-form" onSubmit={handleSubmit}>
+          <AutoGrowingTextArea
+            textareaRef={textareaRef}
+            value={content}
+            onValueChange={setContent}
+            ariaLabel="Your thought"
+            emptyPrompt={starterPrompt}
+            id="content"
+            name="content"
+            required
+          />
+          <PresenceTransition
+            enter="fade-up"
+            enterDuration={motionDurations.page}
+            exit="fade-up"
+            exitDuration={motionDurations.standard}
+            unmountOnExit={false}
+            visible={showSubmit}
           >
             <button
-              className="notification-dismiss"
-              type="button"
-              aria-label="Dismiss notification"
-              onClick={() => dismissNotification(notification.id)}
+              id="submit-button"
+              className="text-button"
+              type="submit"
+              aria-hidden={!showSubmit}
+              tabIndex={showSubmit ? 0 : -1}
             >
-              <span aria-hidden="true">×</span>
+              remember this&nbsp; →
             </button>
-            <p>
-              {notification.state === "pending"
-                ? "committing to memory..."
-                : notification.state === "success"
-                  ? "your memory is ready!"
-                  : notification.message}
-            </p>
-            {(notification.state === "error" ||
-              (notification.state === "success" && notification.runId)) && (
-              <div className="notification-actions">
-                {notification.state === "success" && notification.runId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const runId = notification.runId;
-                      dismissNotification(notification.id);
-                      if (runId) onViewRun(runId);
-                    }}
-                  >
-                    view
-                  </button>
-                )}
-                {notification.state === "error" && (
-                  <button
-                    type="button"
-                    onClick={() => retrySubmission(notification)}
-                  >
-                    retry
-                  </button>
-                )}
-              </div>
-            )}
-          </BlurredContainer>
+          </PresenceTransition>
+        </form>
+      </PresenceTransition>
+      <div className="notification-stack" aria-live="polite">
+        {notifications.map((notification) => (
+          <PresenceTransition
+            enter="fade-up"
+            enterDuration={motionDurations.page}
+            exit="fade-up"
+            exitDuration={motionDurations.standard}
+            key={notification.id}
+            onExited={() => removeNotification(notification.id)}
+            visible={!closingNotificationIds.has(notification.id)}
+          >
+            <BlurredContainer
+              blurredEdges={["top", "right", "bottom", "left"]}
+              edgeBlurSize={18}
+              className={`notification ${notification.state}`}
+              role={notification.state === "error" ? "alert" : "status"}
+            >
+              <button
+                className="notification-dismiss"
+                type="button"
+                aria-label="Dismiss notification"
+                onClick={() => dismissNotification(notification.id)}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+              <p>
+                {notification.state === "pending"
+                  ? "committing to memory..."
+                  : notification.state === "success"
+                    ? "your memory is ready!"
+                    : notification.message}
+              </p>
+              {(notification.state === "error" ||
+                (notification.state === "success" && notification.runId)) && (
+                <div className="notification-actions">
+                  {notification.state === "success" && notification.runId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const runId = notification.runId;
+                        dismissNotification(notification.id);
+                        if (runId) onViewRun(runId);
+                      }}
+                    >
+                      view
+                    </button>
+                  )}
+                  {notification.state === "error" && (
+                    <button
+                      type="button"
+                      onClick={() => retrySubmission(notification)}
+                    >
+                      retry
+                    </button>
+                  )}
+                </div>
+              )}
+            </BlurredContainer>
+          </PresenceTransition>
         ))}
       </div>
     </section>

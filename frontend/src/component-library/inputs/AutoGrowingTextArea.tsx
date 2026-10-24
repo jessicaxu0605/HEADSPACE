@@ -5,10 +5,11 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type FocusEventHandler,
   type RefObject,
 } from "react";
 
-type AutoGrowingTextAreaProps = {
+export type AutoGrowingTextAreaProps = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   value: string;
   onValueChange: (value: string) => void;
@@ -20,6 +21,7 @@ type AutoGrowingTextAreaProps = {
   required?: boolean;
   autoFocus?: boolean;
   className?: string;
+  onBlur?: FocusEventHandler<HTMLTextAreaElement>;
 };
 
 const textareaMaxHeight = 240;
@@ -36,6 +38,7 @@ export default function AutoGrowingTextArea({
   required,
   autoFocus,
   className = "",
+  onBlur,
 }: AutoGrowingTextAreaProps) {
   const [scrollFades, setScrollFades] = useState({ up: false, down: false });
   const autoScrollFrameRef = useRef<number | undefined>(undefined);
@@ -161,6 +164,7 @@ export default function AutoGrowingTextArea({
         autoFocus={autoFocus}
         value={value}
         onChange={handleChange}
+        onBlur={onBlur}
         onScroll={updateScrollFades}
         onTransitionEnd={updateScrollFades}
         onWheel={releaseAutoScroll}

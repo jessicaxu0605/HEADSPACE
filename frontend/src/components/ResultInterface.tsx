@@ -7,8 +7,14 @@ import {
 import type { NodeNeighborhoodResponse, NodeQueryMatch } from "../api";
 import type { GraphSelection } from "../hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "../memory_graph";
+import {
+  BlurredContainer,
+  FadeTransition,
+  PresenceTransition,
+  motionDurations,
+  motionStaggers,
+} from "../component-library";
 import BrainLoader from "./BrainLoader";
-import BlurredContainer from "./BlurredContainer";
 import NeighborhoodGraph from "./NeighborhoodGraph";
 import NodeDetails from "./NodeDetails";
 import RelationshipPage from "./RelationshipPage";
@@ -66,18 +72,20 @@ export default function ResultInterface({
   if (!graphSelection) {
     return (
       <div className="search-feedback" aria-live="polite">
-        {searchStatus && (
-          <p
-            className={`search-status${
-              searchStatusIsError ? " error-message" : ""
-            }`}
-            role={searchStatusIsError ? "alert" : undefined}
-          >
-            {searchStatus}
-          </p>
-        )}
+        <PresenceTransition
+          as="p"
+          className={`search-status${
+            searchStatusIsError ? " error-message" : ""
+          }`}
+          enter="fade-up"
+          exit="fade-up"
+          role={searchStatusIsError ? "alert" : undefined}
+          visible={Boolean(searchStatus)}
+        >
+          {searchStatus}
+        </PresenceTransition>
         <ol className="search-results" aria-label="Search results">
-          {matches.map((match) => {
+          {matches.map((match, index) => {
             const aliases = match.identifiers.filter(
               (identifier) =>
                 identifier.localeCompare(match.title, undefined, {
@@ -86,7 +94,15 @@ export default function ResultInterface({
             );
 
             return (
-              <li className="search-result" key={match.node_id}>
+              <PresenceTransition
+                as="li"
+                className="search-result"
+                enter="fade-up"
+                enterDelay={index * motionStaggers.quick}
+                exit="fade-up"
+                key={match.node_id}
+                visible
+              >
                 <button
                   ref={(element) => {
                     if (selectedNodeIdRef.current === match.node_id) {
@@ -112,7 +128,7 @@ export default function ResultInterface({
                     </span>
                   )}
                 </button>
-              </li>
+              </PresenceTransition>
             );
           })}
         </ol>
@@ -144,23 +160,32 @@ export default function ResultInterface({
             {isRunView ? "← back" : "← back to results"}
           </button>
         </BlurredContainer>
-        {graphLoading ? (
+        {graphLoading && (
           <BrainLoader
             fading={graph !== null}
             label={graphStatus || "Loading graph…"}
           />
-        ) : graphStatus ? (
-          <p
-            className={`graph-status${
-              graphStatusIsError ? " error-message" : ""
-            }`}
-            role={graphStatusIsError ? "alert" : "status"}
-          >
-            {graphStatus}
-          </p>
-        ) : null}
-        {graph && (
-          <div className="graph-body is-revealing">
+        )}
+        <PresenceTransition
+          as="p"
+          className={`graph-status${
+            graphStatusIsError ? " error-message" : ""
+          }`}
+          enter="fade-up"
+          exit="fade-up"
+          role={graphStatusIsError ? "alert" : "status"}
+          visible={!graphLoading && Boolean(graphStatus)}
+        >
+          {graphStatus}
+        </PresenceTransition>
+        <PresenceTransition
+          className="graph-body-transition"
+          enter="fade-up"
+          exit="fade-up"
+          visible={graph !== null}
+        >
+          {graph && (
+          <div className="graph-body">
             <BlurredContainer
               as="header"
               blurredEdges={["top", "right", "bottom", "left"]}
@@ -213,28 +238,39 @@ export default function ResultInterface({
                   onOpenEdge={setOpenEdgeId}
                 />
               )}
-              <p
+              <PresenceTransition
+                as="p"
                 className={`graph-depth${
                   expandNoticeIsError ? " error-message" : ""
                 }`}
+                enter="fade-up"
+                exit="fade-up"
                 role={expandNoticeIsError ? "alert" : undefined}
+                visible={Boolean(expandNotice)}
               >
                 {expandNotice}
-              </p>
+              </PresenceTransition>
             </section>
           </div>
-        )}
+          )}
+        </PresenceTransition>
       </section>
-      {openEdgeId && (
-        <RelationshipPage
-          edgeId={openEdgeId}
-          onBack={() => setOpenEdgeId(null)}
-          onOpenNode={(selection) => {
-            setOpenEdgeId(null);
-            onOpenNode(selection);
-          }}
-        />
-      )}
+      <FadeTransition
+        className="relationship-page-transition"
+        duration={motionDurations.page}
+        visible={openEdgeId !== null}
+      >
+        {openEdgeId && (
+          <RelationshipPage
+            edgeId={openEdgeId}
+            onBack={() => setOpenEdgeId(null)}
+            onOpenNode={(selection) => {
+              setOpenEdgeId(null);
+              onOpenNode(selection);
+            }}
+          />
+        )}
+      </FadeTransition>
     </>
   );
 }

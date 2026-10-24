@@ -9,7 +9,10 @@ import {
   waitForBrainLoaderLeadIn,
 } from "../loading";
 import BrainLoader from "./BrainLoader";
-import BlurredContainer from "./BlurredContainer";
+import {
+  BlurredContainer,
+  PresenceTransition,
+} from "../component-library";
 
 type RelationshipPageProps = {
   edgeId: string;
@@ -113,14 +116,16 @@ export default function RelationshipPage({
             label={status}
           />
         )}
-        {statusIsError && (
-          <p
-            className="graph-status error-message"
-            role="alert"
-          >
-            {status}
-          </p>
-        )}
+        <PresenceTransition
+          as="p"
+          className="graph-status error-message"
+          enter="fade-up"
+          exit="fade-up"
+          role="alert"
+          visible={statusIsError}
+        >
+          {status}
+        </PresenceTransition>
 
         {!edge && (
           <h2 id="relationship-title" className="sr-only">
@@ -128,8 +133,13 @@ export default function RelationshipPage({
           </h2>
         )}
 
-        {edge && (
-          <article className="relationship-body is-revealing">
+        <PresenceTransition
+          enter="fade-up"
+          exit="fade-up"
+          visible={edge !== null}
+        >
+          {edge && (
+          <article className="relationship-body">
             <header className="relationship-header">
               <h2 id="relationship-title" className="graph-title">
                 <button
@@ -236,7 +246,8 @@ export default function RelationshipPage({
               )}
             </section>
           </article>
-        )}
+          )}
+        </PresenceTransition>
       </div>
     </section>
   );
