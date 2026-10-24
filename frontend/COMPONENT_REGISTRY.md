@@ -202,7 +202,10 @@ warnings, loader visibility, overlays, and similarly quiet state changes. Use
 #### Motion tokens
 
 - `motionDurations`: `quick`, `standard`, `page`, and `loader` timing.
-- `motionEasings`: standard `enter` and `exit` curves.
+- `motionEasings`: `enter` and `exit` curves for movement, plus `fade`, a
+  symmetric curve `PresenceTransition` always uses for opacity in both
+  directions so fades mirror each other (`easing`/`enterEasing`/`exitEasing`
+  only shape fade-up movement).
 - `motionDistances`: `subtle` and `standard` translation distances.
 - `motionStaggers`: `quick` and `standard` list intervals.
 
@@ -236,6 +239,7 @@ of Headspace domain state and APIs.
 | `NeighborhoodGraph` | Force-directed canvas graph and its graph-specific interaction/measurement behavior. Its physics are not general UI motion. |
 | `NodeDetails` | Detailed presentation of a selected memory node. Extend for additional node metadata. |
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
+| `SessionMenu` | Fixed top-right hamburger menu on signed-in screens with "all workspaces" (when `onShowWorkspaces` is passed) and "log out". Add further account-level actions here rather than placing more fixed buttons. |
 | `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
 | `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. |
 | `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. |
@@ -253,7 +257,7 @@ nests `SessionProvider` > `WorkspaceProvider` and picks one screen from their st
 | --- | --- |
 | `SessionProvider` / `useSession()` | Whether this browser is signed in: `checking`, `signed-out`, or `signed-in` with the `user`, plus `signIn(loginResponse)` and `signOut()`. The access token in `api.ts` is the source of truth (read with `useSyncExternalStore`); `api.ts` clears it on a 401, which signs the reader out everywhere. Do not store tokens or session flags elsewhere. |
 | `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then the server's `last_used_workspace_id`, which signup sets to the default workspace); otherwise it reports `selecting` so `App` shows `WorkspaceSelection`. `switchWorkspace` records the choice with `markWorkspaceLastUsed`. Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
-| `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, and `switchWorkspace`, for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
+| `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, `switchWorkspace`, and `showAllWorkspaces` (clears the active choice to return to `WorkspaceSelection` without changing the server's last-used workspace), for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
 
 The signed-in app is keyed by workspace id, so switching workspace remounts it and
 discards in-flight requests and per-workspace UI state. `ActiveWorkspaceProvider`

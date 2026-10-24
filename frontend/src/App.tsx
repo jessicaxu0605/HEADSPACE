@@ -3,6 +3,7 @@ import { queryNodes, type NodeQueryMatch } from "./api";
 import AuthFlow from "./features/AuthFlow";
 import ResultInterface from "./features/ResultInterface";
 import SearchInterface from "./features/SearchInterface";
+import SessionMenu from "./features/SessionMenu";
 import SurfacedMemories from "./features/SurfacedMemories";
 import TextEntryInterface from "./features/TextEntryInterface";
 import WorkspaceSelection from "./features/WorkspaceSelection";
@@ -100,7 +101,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
   const restoreResultsFocusRef = useRef(false);
-  const { workspace, canWrite } = useWorkspace();
+  const { workspace, canWrite, showAllWorkspaces } = useWorkspace();
   const graphExplorer = useNeighborhoodExplorer();
 
   useEffect(
@@ -235,9 +236,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
       }}
     >
       <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
-      <button className="session-logout" type="button" onClick={onLogout}>
-        log out
-      </button>
+      <SessionMenu onLogout={onLogout} onShowWorkspaces={showAllWorkspaces} />
       <section className="landing screen" aria-labelledby="search-title">
         <div className="search-wrap">
           <h1 id="search-title" className="sr-only">

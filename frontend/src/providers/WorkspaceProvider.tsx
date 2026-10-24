@@ -22,6 +22,7 @@ export type ActiveWorkspace = {
   role: WorkspaceRole;
   canWrite: boolean;
   switchWorkspace: (workspaceId: string) => void;
+  showAllWorkspaces: () => void;
 };
 
 export type WorkspaceState =
@@ -131,6 +132,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [loaded, userId],
   );
 
+  // Leaves the active workspace for the selection page. The server's last-used
+  // workspace is untouched, so a reload still reopens it.
+  const showAllWorkspaces = useCallback((): void => {
+    setLoaded((current) =>
+      current?.userId === userId ? { ...current, activeId: null } : current,
+    );
+  }, [userId]);
+
   const state = useMemo<WorkspaceState>(() => {
     if (userId === null) return { status: "idle" };
     if (loaded?.userId === userId) {
@@ -152,13 +161,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         role: workspace.role,
         canWrite: workspace.role === "owner" || workspace.role === "editor",
         switchWorkspace,
+        showAllWorkspaces,
       };
     }
     if (failure?.userId === userId) {
       return { status: "error", message: failure.message, retry };
     }
     return { status: "loading" };
-  }, [failure, loaded, retry, switchWorkspace, userId]);
+  }, [failure, loaded, retry, showAllWorkspaces, switchWorkspace, userId]);
 
   return (
     <WorkspaceContext.Provider value={state}>{children}</WorkspaceContext.Provider>

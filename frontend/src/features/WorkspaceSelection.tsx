@@ -1,5 +1,6 @@
 import { PresenceTransition, motionStaggers } from "../component-library";
 import type { Workspace } from "../api";
+import SessionMenu from "./SessionMenu";
 
 type WorkspaceSelectionProps = {
   workspaces: Workspace[];
@@ -23,9 +24,7 @@ export default function WorkspaceSelection({
 }: WorkspaceSelectionProps) {
   return (
     <main className="workspace-selection" aria-labelledby="workspace-selection-title">
-      <button className="session-logout" type="button" onClick={onLogout}>
-        log out
-      </button>
+      <SessionMenu onLogout={onLogout} />
       <h1 id="workspace-selection-title" className="workspace-selection-title">
         what HEADSPACE are you in today?
       </h1>

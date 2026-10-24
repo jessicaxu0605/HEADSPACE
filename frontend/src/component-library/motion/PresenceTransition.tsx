@@ -48,6 +48,7 @@ type TransitionPhase = "entering" | "entered" | "exiting";
 
 type PresenceTransitionStyle = CSSProperties & {
   "--presence-distance": string;
+  "--presence-fade-easing": string;
   "--presence-enter-duration": string;
   "--presence-enter-easing": string;
   "--presence-enter-delay": string;
@@ -138,6 +139,7 @@ export default function PresenceTransition({
   const transitionStyle: PresenceTransitionStyle = {
     ...style,
     "--presence-distance": distanceValue(distance),
+    "--presence-fade-easing": motionEasings.fade,
     "--presence-enter-duration": `${Math.max(0, enterDuration)}ms`,
     "--presence-enter-easing": enterEasing,
     "--presence-enter-delay": `${Math.max(0, enterDelay)}ms`,

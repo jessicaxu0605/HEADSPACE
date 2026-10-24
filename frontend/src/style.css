@@ -1401,7 +1401,7 @@ textarea:focus {
 }
 
 .workspace-selection-title {
-  /* Clears the fixed log-out button in the top right on narrow screens. */
+  /* Clears the fixed session menu in the top right on narrow screens. */
   margin: 0 64px 28px 0;
   color: #34332f;
   font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
@@ -1597,20 +1597,6 @@ textarea:focus {
   gap: 14px;
 }
 
-.session-logout {
-  color: inherit;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font: inherit;
-}
-
-.session-logout:hover,
-.session-logout:focus-visible {
-  color: #34322d;
-  outline: none;
-}
-
 .auth-prompt {
   min-height: 3.2em;
   margin: 18px 0 2px;
@@ -1637,7 +1623,10 @@ textarea:focus {
 .presence-transition.is-entering {
   transition-delay: var(--presence-enter-delay, 0ms);
   transition-duration: var(--presence-enter-duration, 240ms);
-  transition-timing-function: var(--presence-enter-easing, ease);
+  /* Opacity uses one symmetric curve both ways so fades mirror each other. */
+  transition-timing-function:
+    var(--presence-fade-easing, ease-in-out),
+    var(--presence-enter-easing, ease);
 }
 
 .presence-transition.is-entered {
@@ -1646,13 +1635,18 @@ textarea:focus {
   transform: none;
   transition-delay: var(--presence-enter-delay, 0ms);
   transition-duration: var(--presence-enter-duration, 240ms);
-  transition-timing-function: var(--presence-enter-easing, ease);
+  /* Opacity uses one symmetric curve both ways so fades mirror each other. */
+  transition-timing-function:
+    var(--presence-fade-easing, ease-in-out),
+    var(--presence-enter-easing, ease);
 }
 
 .presence-transition.is-exiting {
   transition-delay: var(--presence-exit-delay, 0ms);
   transition-duration: var(--presence-exit-duration, 240ms);
-  transition-timing-function: var(--presence-exit-easing, ease);
+  transition-timing-function:
+    var(--presence-fade-easing, ease-in-out),
+    var(--presence-exit-easing, ease);
 }
 
 .presence-transition.is-entering.enter-fade-up {
@@ -1684,15 +1678,46 @@ textarea:focus {
   background: #4c4942;
 }
 
-.session-logout {
+.session-menu {
   position: fixed;
   top: 22px;
   right: 28px;
   z-index: 20;
-  padding: 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.session-menu-toggle {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 9px 8px;
   color: #aaa69d;
-  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
-  font-size: 0.82rem;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.session-menu-toggle span {
+  display: block;
+  height: 1px;
+  background: currentColor;
+}
+
+.session-menu-toggle:hover,
+.session-menu-toggle:focus-visible {
+  color: #34322d;
+  outline: none;
+}
+
+.session-menu-panel {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  padding: 14px 18px;
 }
 
 @media (max-width: 620px) {
@@ -1712,7 +1737,7 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .session-logout {
+  .session-menu {
     top: 12px;
     right: 14px;
   }

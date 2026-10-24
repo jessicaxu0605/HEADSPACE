@@ -8,6 +8,9 @@ export const motionDurations = {
 export const motionEasings = {
   enter: "cubic-bezier(0.16, 1, 0.3, 1)",
   exit: "cubic-bezier(0.4, 0, 1, 1)",
+  // Opacity in both directions. Symmetric, so a fade-out mirrors its fade-in;
+  // `enter` front-loads so much that half a fade lands in the first frame.
+  fade: "ease-in-out",
 } as const;
 
 export const motionDistances = {
