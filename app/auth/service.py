@@ -79,20 +79,20 @@ class AuthService:
 
     async def authenticate(self, token: str) -> AuthenticatedSession:
         claims = self._tokens.decode(token)
-        session = await self._store.get_session(session_id=claims.session_id)
+        authenticated = await self._store.get_authenticated_session(
+            session_id=claims.session_id
+        )
         now = datetime.now(UTC)
         if (
-            session is None
-            or session.revoked_at is not None
-            or session.expires_at <= now
-            or session.user_id != claims.user_id
+            authenticated is None
+            or authenticated.session.revoked_at is not None
+            or authenticated.session.expires_at <= now
+            or authenticated.session.user_id != claims.user_id
         ):
             raise InvalidTokenError("Invalid or expired access token.")
-        user = await self._store.get_user(user_id=session.user_id)
-        if user is None:
-            raise InvalidTokenError("Invalid or expired access token.")
-        await self._store.touch_session(session_id=session.id)
-        return AuthenticatedSession(user, session)
+        # TODO: If session/device management or idle expiry is added, update
+        # last_used_at on a throttled cadence instead of writing on every request.
+        return authenticated
 
     async def logout(self, authenticated: AuthenticatedSession) -> None:
         await self._store.revoke_session(

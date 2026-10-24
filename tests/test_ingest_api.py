@@ -115,10 +115,15 @@ class IngestionApiTests(unittest.TestCase):
         self.assertEqual(oversized.status_code, 422)
 
     def test_get_returns_404_for_unknown_run(self) -> None:
-        with patch("app.main.get_ingestion_run", return_value=None):
-            response = self.client.get(f"/api/v1/ingestions/{uuid4()}")
+        run_id = uuid4()
+        with patch("app.main.get_ingestion_run", return_value=None) as get_run:
+            response = self.client.get(f"/api/v1/ingestions/{run_id}")
 
         self.assertEqual(response.status_code, 404)
+        get_run.assert_called_once_with(
+            workspace_id=UUID("00000000-0000-0000-0000-000000000002"),
+            run_id=run_id,
+        )
 
 
 if __name__ == "__main__":

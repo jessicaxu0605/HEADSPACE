@@ -818,7 +818,10 @@ async def create_ingestion(
     tags=["ingestion"],
 )
 async def read_ingestion(run_id: UUID) -> IngestionRunResponse:
-    run = get_ingestion_run(run_id)
+    run = get_ingestion_run(
+        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        run_id=run_id,
+    )
     if run is None:
         raise HTTPException(status_code=404, detail="Ingestion run not found.")
     return IngestionRunResponse.from_record(run)

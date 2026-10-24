@@ -8,7 +8,7 @@ from uuid import UUID
 
 from psycopg.errors import UniqueViolation
 
-from app.auth.models import Session, User, UserWithPassword
+from app.auth.models import AuthenticatedSession, Session, User, UserWithPassword
 from app.persistence.postgres.connection import get_async_connection
 
 
@@ -29,8 +29,6 @@ class AuthStore(Protocol):
 
     async def get_user_by_email(self, *, email: str) -> UserWithPassword | None: ...
 
-    async def get_user(self, *, user_id: UUID) -> User | None: ...
-
     async def create_session(
         self,
         *,
@@ -38,9 +36,9 @@ class AuthStore(Protocol):
         expires_at: datetime,
     ) -> Session: ...
 
-    async def get_session(self, *, session_id: UUID) -> Session | None: ...
-
-    async def touch_session(self, *, session_id: UUID) -> None: ...
+    async def get_authenticated_session(
+        self, *, session_id: UUID
+    ) -> AuthenticatedSession | None: ...
 
     async def revoke_session(self, *, session_id: UUID, user_id: UUID) -> None: ...
 
@@ -122,20 +120,6 @@ class PostgresAuthStore:
             password_hash=row["password_hash"],
         )
 
-    async def get_user(self, *, user_id: UUID) -> User | None:
-        async with get_async_connection() as conn:
-            row = await (
-                await conn.execute(
-                    """
-                    SELECT id, email, name, created_at, birthday, about
-                    FROM users
-                    WHERE id = %s AND deleted_at IS NULL
-                    """,
-                    (user_id,),
-                )
-            ).fetchone()
-        return _user(row) if row is not None else None
-
     async def create_session(
         self,
         *,
@@ -156,26 +140,52 @@ class PostgresAuthStore:
         assert row is not None
         return _session(row)
 
-    async def get_session(self, *, session_id: UUID) -> Session | None:
+    async def get_authenticated_session(
+        self, *, session_id: UUID
+    ) -> AuthenticatedSession | None:
         async with get_async_connection() as conn:
             row = await (
                 await conn.execute(
                     """
-                    SELECT id, user_id, created_at, expires_at, revoked_at
-                    FROM auth_session
-                    WHERE id = %s
+                    SELECT
+                        s.id AS session_id,
+                        s.user_id AS session_user_id,
+                        s.created_at AS session_created_at,
+                        s.expires_at,
+                        s.revoked_at,
+                        u.id AS user_id,
+                        u.email,
+                        u.name,
+                        u.created_at AS user_created_at,
+                        u.birthday,
+                        u.about
+                    FROM auth_session AS s
+                    JOIN users AS u
+                      ON u.id = s.user_id AND u.deleted_at IS NULL
+                    WHERE s.id = %s
                     """,
                     (session_id,),
                 )
             ).fetchone()
-        return _session(row) if row is not None else None
-
-    async def touch_session(self, *, session_id: UUID) -> None:
-        async with get_async_connection() as conn:
-            await conn.execute(
-                "UPDATE auth_session SET last_used_at = now() WHERE id = %s",
-                (session_id,),
-            )
+        if row is None:
+            return None
+        return AuthenticatedSession(
+            user=User(
+                id=row["user_id"],
+                email=row["email"],
+                name=row["name"],
+                created_at=row["user_created_at"],
+                birthday=row["birthday"],
+                about=row["about"],
+            ),
+            session=Session(
+                id=row["session_id"],
+                user_id=row["session_user_id"],
+                created_at=row["session_created_at"],
+                expires_at=row["expires_at"],
+                revoked_at=row["revoked_at"],
+            ),
+        )
 
     async def revoke_session(self, *, session_id: UUID, user_id: UUID) -> None:
         async with get_async_connection() as conn:

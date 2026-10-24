@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import UTC, date, datetime
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import jwt
@@ -19,6 +20,7 @@ from app.auth.models import (
 )
 from app.auth.passwords import PasswordManager
 from app.auth.service import AuthService, InvalidCredentialsError
+from app.auth.store import PostgresAuthStore
 from app.auth.tokens import InvalidTokenError, JwtTokenCodec
 from app.main import app
 
@@ -41,7 +43,6 @@ class FakeAuthStore:
     def __init__(self) -> None:
         self.users_by_email: dict[str, UserWithPassword] = {}
         self.sessions: dict[UUID, Session] = {}
-        self.touched: list[UUID] = []
 
     async def create_user(
         self, *, email, name, password_hash, birthday, about
@@ -69,30 +70,30 @@ class FakeAuthStore:
     async def get_user_by_email(self, *, email):
         return self.users_by_email.get(email.casefold())
 
-    async def get_user(self, *, user_id):
-        for user in self.users_by_email.values():
-            if user.id == user_id:
-                return User(
-                    user.id,
-                    user.email,
-                    user.name,
-                    user.created_at,
-                    user.birthday,
-                    user.about,
-                )
-        return None
-
     async def create_session(self, *, user_id, expires_at):
         now = datetime.now(UTC)
         session = Session(uuid4(), user_id, now, expires_at)
         self.sessions[session.id] = session
         return session
 
-    async def get_session(self, *, session_id):
-        return self.sessions.get(session_id)
-
-    async def touch_session(self, *, session_id):
-        self.touched.append(session_id)
+    async def get_authenticated_session(self, *, session_id):
+        session = self.sessions.get(session_id)
+        if session is None:
+            return None
+        for user in self.users_by_email.values():
+            if user.id == session.user_id:
+                return AuthenticatedSession(
+                    User(
+                        user.id,
+                        user.email,
+                        user.name,
+                        user.created_at,
+                        user.birthday,
+                        user.about,
+                    ),
+                    session,
+                )
+        return None
 
     async def revoke_session(self, *, session_id, user_id):
         session = self.sessions.get(session_id)
@@ -104,6 +105,65 @@ class FakeAuthStore:
                 "revoked_at": session.revoked_at or datetime.now(UTC),
             }
         )
+
+
+class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
+    async def test_loads_session_and_user_in_one_query(self):
+        session_id = uuid4()
+        user_id = uuid4()
+        now = datetime.now(UTC)
+        row = {
+            "session_id": session_id,
+            "session_user_id": user_id,
+            "session_created_at": now,
+            "expires_at": now,
+            "revoked_at": None,
+            "user_id": user_id,
+            "email": "jessica@example.com",
+            "name": "Jessica Xu",
+            "user_created_at": now,
+            "birthday": None,
+            "about": None,
+        }
+
+        class Cursor:
+            async def fetchone(self):
+                return row
+
+        class Connection:
+            def __init__(self):
+                self.calls = []
+
+            async def execute(self, query, params):
+                self.calls.append((query, params))
+                return Cursor()
+
+        class ConnectionContext:
+            def __init__(self, connection):
+                self.connection = connection
+
+            async def __aenter__(self):
+                return self.connection
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        connection = Connection()
+        with patch(
+            "app.auth.store.get_async_connection",
+            return_value=ConnectionContext(connection),
+        ):
+            authenticated = await PostgresAuthStore().get_authenticated_session(
+                session_id=session_id
+            )
+
+        self.assertIsNotNone(authenticated)
+        self.assertEqual(authenticated.session.id, session_id)
+        self.assertEqual(authenticated.user.id, user_id)
+        self.assertEqual(len(connection.calls), 1)
+        query, params = connection.calls[0]
+        self.assertIn("JOIN users AS u", query)
+        self.assertEqual(params, (session_id,))
 
 
 class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -172,7 +232,6 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
         authenticated = await self.service.authenticate(issued.access_token)
 
         self.assertEqual(authenticated.user.email, "jessica@example.com")
-        self.assertEqual(self.store.touched, [authenticated.session.id])
 
         self.store.sessions[authenticated.session.id] = Session(
             **{

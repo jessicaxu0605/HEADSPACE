@@ -11,6 +11,7 @@ from app.workflows.ingest.workflow import (
     _persist_review_items,
     IngestionExecutionError,
     StaleTransactionPlanError,
+    get_ingestion_run,
     ingest_content,
 )
 from app.workflows.ingest.resolve_proposed_subgraph import (
@@ -31,6 +32,48 @@ from app.workflows.ingest.types import (
 
 
 class IngestWorkflowTests(unittest.IsolatedAsyncioTestCase):
+    def test_ingestion_run_lookup_is_scoped_to_workspace(self) -> None:
+        workspace_id = uuid4()
+        run_id = uuid4()
+
+        class EmptyCursor:
+            def fetchone(self):
+                return None
+
+        class RecordingConnection:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def execute(self, query, params):
+                self.calls.append((query, params))
+                return EmptyCursor()
+
+        class ConnectionContext:
+            def __init__(self, connection) -> None:
+                self.connection = connection
+
+            def __enter__(self):
+                return self.connection
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+        connection = RecordingConnection()
+        with patch(
+            "app.workflows.ingest.workflow.get_connection",
+            return_value=ConnectionContext(connection),
+        ):
+            result = get_ingestion_run(
+                workspace_id=workspace_id,
+                run_id=run_id,
+            )
+
+        self.assertIsNone(result)
+        self.assertEqual(len(connection.calls), 1)
+        query, params = connection.calls[0]
+        self.assertIn("WHERE workspace_id = %s AND id = %s", query)
+        self.assertEqual(params, (workspace_id, run_id))
+
     def test_persistence_reads_an_active_database_relation(self) -> None:
         expected = {
             "id": uuid4(),

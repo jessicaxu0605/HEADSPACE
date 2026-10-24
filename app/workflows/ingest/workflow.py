@@ -104,7 +104,9 @@ def create_memory_source(source_input: MemorySourceInput) -> MemorySourceRecord:
     return MemorySourceRecord(**row)
 
 
-def get_ingestion_run(run_id: UUID) -> IngestionRunRecord | None:
+def get_ingestion_run(
+    *, workspace_id: UUID, run_id: UUID
+) -> IngestionRunRecord | None:
     with get_connection() as conn:
         row = conn.execute(
             """
@@ -118,9 +120,9 @@ def get_ingestion_run(run_id: UUID) -> IngestionRunRecord | None:
                 created_at,
                 updated_at
             FROM ingestion_run
-            WHERE id = %s
+            WHERE workspace_id = %s AND id = %s
             """,
-            (run_id,),
+            (workspace_id, run_id),
         ).fetchone()
     return IngestionRunRecord(**row) if row is not None else None
 
