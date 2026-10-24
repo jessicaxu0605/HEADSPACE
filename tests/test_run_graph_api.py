@@ -5,9 +5,10 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.persistence.postgres.connection import DEFAULT_DEVELOPMENT_WORKSPACE_ID
 from app.main import app, get_run_graph_store
 from app.graph.queries.run_graph import RunGraph, RunGraphEdge, RunGraphNode
+from app.workspaces.dependencies import require_workspace_member
+from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 
 class FakeRunGraphStore:
@@ -66,6 +67,9 @@ def make_graph() -> RunGraph:
 
 
 class RunGraphApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        app.dependency_overrides[require_workspace_member] = workspace_membership
+
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
@@ -87,7 +91,7 @@ class RunGraphApiTests(unittest.TestCase):
         self.assertEqual(body["edges"][0]["change_kind"], "created")
         self.assertEqual(
             store.calls,
-            [{"workspace_id": DEFAULT_DEVELOPMENT_WORKSPACE_ID, "run_id": graph.run_id}],
+            [{"workspace_id": TEST_WORKSPACE_ID, "run_id": graph.run_id}],
         )
 
     def test_unknown_run_returns_404(self) -> None:

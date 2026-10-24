@@ -6,7 +6,6 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from uuid import UUID
 
 import psycopg
 from dotenv import dotenv_values
@@ -93,10 +92,3 @@ async def get_async_connection() -> AsyncIterator[psycopg.AsyncConnection]:
 
     async with get_async_pool().connection() as conn:
         yield conn
-
-
-# Requests without authenticated workspace context use this development workspace.
-# It is provisioned once by the database migrations rather than on every request.
-DEFAULT_DEVELOPMENT_WORKSPACE_ID = UUID(
-    "00000000-0000-0000-0000-000000000002"
-)

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, cast
+from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
 from app.auth.models import User
 from app.persistence.postgres.connection import get_async_connection
-from app.workspaces.models import CreatedWorkspace, Workspace
+from app.workspaces.models import (
+    CreatedWorkspace,
+    Workspace,
+    WorkspaceMembership,
+    WorkspaceRole,
+)
 
 
 class WorkspaceStore(Protocol):
@@ -19,6 +25,16 @@ class WorkspaceStore(Protocol):
         name: str,
         create_self_node: bool,
     ) -> CreatedWorkspace: ...
+
+
+class WorkspaceMembershipStore(Protocol):
+    async def get_active_membership(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+    ) -> WorkspaceMembership | None: ...
+
 
 class PostgresWorkspaceStore:
     async def create_workspace(
@@ -106,3 +122,34 @@ class PostgresWorkspaceStore:
             created_at=workspace_row["created_at"],
         )
         return CreatedWorkspace(workspace, self_node_id)
+
+
+class PostgresWorkspaceMembershipStore:
+    async def get_active_membership(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+    ) -> WorkspaceMembership | None:
+        async with get_async_connection() as conn:
+            row = await (
+                await conn.execute(
+                    """
+                    SELECT wm.workspace_id, wm.user_id, wm.role
+                    FROM workspace_member AS wm
+                    JOIN workspaces AS w
+                      ON w.id = wm.workspace_id AND w.deleted_at IS NULL
+                    WHERE wm.workspace_id = %s
+                      AND wm.user_id = %s
+                      AND wm.removed_at IS NULL
+                    """,
+                    (workspace_id, user_id),
+                )
+            ).fetchone()
+        if row is None:
+            return None
+        return WorkspaceMembership(
+            workspace_id=row["workspace_id"],
+            user_id=row["user_id"],
+            role=cast(WorkspaceRole, row["role"]),
+        )

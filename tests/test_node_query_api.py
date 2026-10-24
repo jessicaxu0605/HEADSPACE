@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import unittest
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.main import app, get_node_search_store
 from app.search.node_search import NodeSearchResult
+from app.workspaces.dependencies import require_workspace_member
+from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 
 def _result(node_type, title, match_kind, score, reasons, identifiers=()):
@@ -26,11 +28,14 @@ class FakeSearchStore:
 
 
 class NodeQueryApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        app.dependency_overrides[require_workspace_member] = workspace_membership
+
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
     def test_returns_ranked_limited_results_from_search_store(self) -> None:
-        expected_workspace_id = UUID("00000000-0000-0000-0000-000000000002")
+        expected_workspace_id = TEST_WORKSPACE_ID
         sarah = _result(
             "person", "Sarah Chen", "identifier", 0.99, ["exact alias"], ["Sarah"]
         )

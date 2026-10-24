@@ -3,12 +3,14 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from app.main import app, get_extraction_llm, get_resolver_store
 from app.workflows.ingest.types import IngestionRunRecord
+from app.workspaces.dependencies import require_workspace_member
+from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 
 class FakeLLM:
@@ -23,7 +25,7 @@ def run_record(*, status: str = "completed") -> IngestionRunRecord:
     now = datetime.now(timezone.utc)
     return IngestionRunRecord(
         id=uuid4(),
-        workspace_id=UUID("00000000-0000-0000-0000-000000000002"),
+        workspace_id=TEST_WORKSPACE_ID,
         source_id=uuid4(),
         status=status,
         result={
@@ -45,6 +47,7 @@ def run_record(*, status: str = "completed") -> IngestionRunRecord:
 
 class IngestionApiTests(unittest.TestCase):
     def setUp(self) -> None:
+        app.dependency_overrides[require_workspace_member] = workspace_membership
         app.dependency_overrides[get_extraction_llm] = lambda: FakeLLM()
         self.resolver_store = FakeResolverStore()
         app.dependency_overrides[get_resolver_store] = lambda: self.resolver_store
@@ -121,7 +124,7 @@ class IngestionApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         get_run.assert_called_once_with(
-            workspace_id=UUID("00000000-0000-0000-0000-000000000002"),
+            workspace_id=TEST_WORKSPACE_ID,
             run_id=run_id,
         )
 

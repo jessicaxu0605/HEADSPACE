@@ -40,7 +40,6 @@ from app.persistence.postgres.canonical_graph import (
     load_active_relation_types,
 )
 from app.persistence.postgres.connection import (
-    DEFAULT_DEVELOPMENT_WORKSPACE_ID,
     close_async_pool,
     open_async_pool,
 )
@@ -77,6 +76,11 @@ from app.workflows.ingest.workflow import (
     ingest_content,
 )
 from app.workspaces.api import router as workspace_router
+from app.workspaces.dependencies import (
+    require_workspace_member,
+    require_workspace_writer,
+)
+from app.workspaces.models import WorkspaceMembership
 
 
 SupportedApiSourceType = Literal["manual_entry", "email", "calendar_event"]
@@ -627,11 +631,12 @@ async def health() -> dict[str, str]:
 )
 async def query_node(
     request: NodeQueryRequest,
+    _membership: WorkspaceMembership = Depends(require_workspace_member),
     search_store: NodeSearchStore = Depends(get_node_search_store),
 ) -> NodeQueryResponse:
     """Return canonical nodes related to the query, by keyword and meaning."""
 
-    workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
+    workspace_id = _membership.workspace_id
     results = await search_store.search_nodes(
         workspace_id=workspace_id,
         query=request.query,
@@ -669,11 +674,12 @@ async def query_node(
 async def read_node_neighborhood(
     node_id: UUID,
     depth: int = Query(default=1, ge=0, le=10),
+    _membership: WorkspaceMembership = Depends(require_workspace_member),
     neighborhood_store: NodeNeighborhoodStore = Depends(get_neighborhood_store),
 ) -> NodeNeighborhoodResponse:
     """Return the active canonical graph within ``depth`` hops of a node."""
 
-    workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
+    workspace_id = _membership.workspace_id
     neighborhood = await neighborhood_store.get_node_neighborhood(
         workspace_id=workspace_id,
         start_node_id=node_id,
@@ -697,6 +703,7 @@ async def read_node_neighborhood(
 )
 async def read_edge(
     edge_id: UUID,
+    _membership: WorkspaceMembership = Depends(require_workspace_member),
     edge_store: EdgeDetailStore = Depends(get_edge_detail_store),
 ) -> EdgeDetailResponse:
     """Return an edge with both endpoint nodes and all supporting evidence.
@@ -706,7 +713,7 @@ async def read_edge(
     """
 
     edge = await edge_store.get_edge_detail(
-        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        workspace_id=_membership.workspace_id,
         edge_id=edge_id,
     )
     if edge is None:
@@ -728,6 +735,7 @@ async def read_landing(
     ),
     exclude_node_ids: list[UUID] = Query(default=[]),
     exclude_edge_ids: list[UUID] = Query(default=[]),
+    _membership: WorkspaceMembership = Depends(require_workspace_member),
     surfacing_store: MemorySurfacingStore = Depends(get_memory_surfacing_store),
     embedding_model: str = Depends(get_embedding_model),
 ) -> LandingResponse:
@@ -745,7 +753,7 @@ async def read_landing(
         raise HTTPException(status_code=422, detail="Unknown time zone.") from exc
 
     ctx = SurfacingContext(
-        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        workspace_id=_membership.workspace_id,
         now=datetime.now(UTC),
         timezone=timezone,
         exclude_node_ids=frozenset(exclude_node_ids),
@@ -782,13 +790,14 @@ async def read_landing(
 async def create_ingestion(
     request: IngestionRequest,
     response: Response,
+    _membership: WorkspaceMembership = Depends(require_workspace_writer),
     llm: ChunkExtractionLLM = Depends(get_extraction_llm),
     enrichment_llm: TypeSpecificEnrichmentLLM = Depends(get_enrichment_llm),
     resolver_store: CanonicalGraphResolverStore = Depends(get_resolver_store),
 ) -> IngestionRunResponse | JSONResponse:
-    """Extract and resolve one source in the default development workspace."""
+    """Extract and resolve one source in the authorized workspace."""
 
-    workspace_id = DEFAULT_DEVELOPMENT_WORKSPACE_ID
+    workspace_id = _membership.workspace_id
     try:
         run = await ingest_content(
             workspace_id=workspace_id,
@@ -817,9 +826,12 @@ async def create_ingestion(
     response_model=IngestionRunResponse,
     tags=["ingestion"],
 )
-async def read_ingestion(run_id: UUID) -> IngestionRunResponse:
+async def read_ingestion(
+    run_id: UUID,
+    _membership: WorkspaceMembership = Depends(require_workspace_member),
+) -> IngestionRunResponse:
     run = get_ingestion_run(
-        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        workspace_id=_membership.workspace_id,
         run_id=run_id,
     )
     if run is None:
@@ -834,6 +846,7 @@ async def read_ingestion(run_id: UUID) -> IngestionRunResponse:
 )
 async def read_ingestion_graph(
     run_id: UUID,
+    _membership: WorkspaceMembership = Depends(require_workspace_member),
     run_graph_store: RunGraphStore = Depends(get_run_graph_store),
 ) -> RunGraphResponse:
     """Return every node and edge the run created, updated, archived, or merged.
@@ -844,7 +857,7 @@ async def read_ingestion_graph(
     """
 
     graph = await run_graph_store.get_run_graph(
-        workspace_id=DEFAULT_DEVELOPMENT_WORKSPACE_ID,
+        workspace_id=_membership.workspace_id,
         run_id=run_id,
     )
     if graph is None:

@@ -45,7 +45,8 @@ The API opens an asynchronous PostgreSQL connection pool at startup and closes i
 Submit content from the frontend or curl. Generate `client_request_id` once and reuse it when retrying the same submission:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/ingestions \
+curl -X POST 'http://localhost:8000/api/v1/ingestions?workspace_id=<workspace-id>' \
+  -H 'Authorization: Bearer <access-token>' \
   -H 'Content-Type: application/json' \
   -d '{
     "source_type": "manual_entry",
@@ -60,7 +61,8 @@ The completed response includes the extracted `result.proposed_graph` and the ap
 Search canonical nodes related to a query. Results combine lexical matches (exact external IDs, identifiers, and titles, then trigram-fuzzy names) with vector matches against each node's `identity` and `profile` search projections. Exact matches rank first; the rest are ordered by reciprocal rank fusion of the fuzzy and vector rankings, so nodes found both ways rise. `match_kind` and `match_score` report the mechanism that ranked each node highest. Without Ollama or built projections, search falls back to lexical matches. Omit `node_type` to search every supported type, or include it to narrow the results. Aliases and external IDs are optional exact-match signals:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/nodes/query \
+curl -X POST 'http://localhost:8000/api/v1/nodes/query?workspace_id=<workspace-id>' \
+  -H 'Authorization: Bearer <access-token>' \
   -H 'Content-Type: application/json' \
   -d '{
     "query": "Sara Chen",
@@ -74,16 +76,16 @@ The response contains ranked candidates with their match kind (`external_id`, `i
 Fetch a node's active graph neighborhood with a bounded hop depth:
 
 ```bash
-curl 'http://localhost:8000/api/v1/nodes/00000000-0000-0000-0000-000000000123/graph?depth=2'
+curl \
+  -H 'Authorization: Bearer <access-token>' \
+  'http://localhost:8000/api/v1/nodes/00000000-0000-0000-0000-000000000123/graph?workspace_id=<workspace-id>&depth=2'
 ```
 
 The response includes the starting node, every active canonical node reachable within `depth` relationships, each node's shortest `distance`, and every unique active edge whose endpoints are both in the result. Traversal treats edges as bidirectional, tracks visited node IDs to stop cycles, and preserves each edge's canonical direction in the response. PostgreSQL performs the bounded traversal with a recursive CTE and indexed edge frontiers, returning only the reached subgraph. Depth is limited to 10 for the prototype.
 
-> **Default development workspace:** Until authentication supplies workspace
-> context, every request uses workspace UUID
-> `00000000-0000-0000-0000-000000000002`. Migration
-> `003_default_development_workspace.sql` provisions it once; API requests do not
-> create or update it.
+Workspace-scoped requests require a `workspace_id` query parameter and a
+bearer-authenticated user with an active `workspace_member` row for that
+workspace. Ingestion additionally requires the `owner` or `editor` role.
 
 ## Authentication
 
@@ -125,8 +127,8 @@ a stable `headspace_user` external ID, and is queued for search projection
 rebuilding.
 
 Workspace creation does not modify the current session or issue a replacement
-token. Clients select a workspace on workspace-scoped requests, where membership
-and role are authorized independently of the session.
+token. Clients provide the target `workspace_id` on workspace-scoped requests;
+membership and role are authorized independently of the session.
 
 ## Local embeddings
 

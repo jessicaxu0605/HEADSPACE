@@ -11,6 +11,8 @@ from app.graph.queries.node_neighborhood import (
     NeighborhoodNode,
     SimpleNodeNeighborhoodStore,
 )
+from app.workspaces.dependencies import require_workspace_member
+from tests.helpers import workspace_membership
 
 
 class NodeNeighborhoodWorkflowTests(unittest.IsolatedAsyncioTestCase):
@@ -103,6 +105,9 @@ class FakeNeighborhoodStore:
 
 
 class NodeNeighborhoodApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        app.dependency_overrides[require_workspace_member] = workspace_membership
+
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 

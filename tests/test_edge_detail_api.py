@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -14,6 +14,8 @@ from app.graph.queries.edge_detail import (
     EdgeEvidenceAnnotation,
     EdgeEvidenceSource,
 )
+from app.workspaces.dependencies import require_workspace_member
+from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 
 class FakeEdgeDetailStore:
@@ -70,6 +72,9 @@ def make_edge() -> EdgeDetail:
 
 
 class EdgeDetailApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        app.dependency_overrides[require_workspace_member] = workspace_membership
+
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
 
@@ -102,7 +107,7 @@ class EdgeDetailApiTests(unittest.TestCase):
             store.calls,
             [
                 {
-                    "workspace_id": UUID("00000000-0000-0000-0000-000000000002"),
+                    "workspace_id": TEST_WORKSPACE_ID,
                     "edge_id": edge.edge_id,
                 }
             ],
