@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
-  clearAccessToken,
   createUser,
-  getAccessToken,
-  getCurrentSession,
   login,
-  setAccessToken,
   type CreateUserInput,
+  type LoginResponse,
 } from "../api";
 import {
-  BrainLoader,
   PageTransition,
   PresenceTransition,
   TextButton,
@@ -26,13 +22,7 @@ const ABOUT_PROMPTS = [
   "What routines, tastes, or little preferences make you you?",
 ];
 
-type AuthPage =
-  | "checking"
-  | "welcome"
-  | "login"
-  | "credentials"
-  | "profile"
-  | "about";
+type AuthPage = "welcome" | "login" | "credentials" | "profile" | "about";
 type AuthStatusTarget =
   | "login-email"
   | "login-password"
@@ -44,7 +34,7 @@ type AuthStatusTarget =
   | null;
 
 type AuthFlowProps = {
-  onAuthenticated: () => void;
+  onAuthenticated: (login: LoginResponse) => void;
 };
 
 const emptySignup: CreateUserInput = {
@@ -68,11 +58,7 @@ const requiredWarning = (value: string, label: string): string =>
   value.trim() ? "" : `Enter your ${label}.`;
 
 export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
-  // A stored token is verified before anything else is shown; without one the
-  // flow starts at the welcome page.
-  const [page, setPage] = useState<AuthPage>(() =>
-    getAccessToken() ? "checking" : "welcome",
-  );
+  const [page, setPage] = useState<AuthPage>("welcome");
   const [signup, setSignup] = useState<CreateUserInput>(emptySignup);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -81,25 +67,6 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
   const [statusTarget, setStatusTarget] = useState<AuthStatusTarget>(null);
   const [submitting, setSubmitting] = useState(false);
   const aboutTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const onAuthenticatedRef = useRef(onAuthenticated);
-  onAuthenticatedRef.current = onAuthenticated;
-
-  useEffect(() => {
-    if (page !== "checking") return;
-    let active = true;
-    getCurrentSession()
-      .then(() => {
-        if (active) onAuthenticatedRef.current();
-      })
-      .catch(() => {
-        clearAccessToken();
-        if (active) setPage("welcome");
-      });
-    return () => {
-      active = false;
-    };
-  }, [page]);
-
   useEffect(() => {
     if (page !== "about") return;
     const interval = window.setInterval(
@@ -167,10 +134,10 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
     setSubmitting(true);
     clearStatus();
     try {
+      // Signup also creates the account's default workspace, which the
+      // workspace provider selects once the new session is signed in.
       await createUser(skipAbout ? { ...signup, about: "" } : signup);
-      const authenticated = await login(signup.email, signup.password);
-      setAccessToken(authenticated.access_token);
-      onAuthenticated();
+      onAuthenticated(await login(signup.email, signup.password));
     } catch (error) {
       showStatus(
         error instanceof Error
@@ -196,9 +163,7 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
     setSubmitting(true);
     clearStatus();
     try {
-      const authenticated = await login(loginEmail, loginPassword);
-      setAccessToken(authenticated.access_token);
-      onAuthenticated();
+      onAuthenticated(await login(loginEmail, loginPassword));
     } catch (error) {
       showStatus(
         error instanceof Error ? error.message : "Couldn’t log you in.",
@@ -217,10 +182,6 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
         pageKey={page}
       >
         <>
-          {page === "checking" && (
-            <BrainLoader label="Opening your headspace…" />
-          )}
-
           {page === "welcome" && (
             <section
               className="auth-card auth-welcome"

@@ -116,7 +116,17 @@ openssl rsa -pubout -in .secrets/auth-jwt-private.pem \
 The private key is used only to issue tokens; verification uses the separately
 configured public key. There is intentionally no shared-secret JWT mode.
 
-### Workspace creation
+### Workspaces
+
+Signup creates a default `Personal` workspace in the same transaction as the
+account, with the new user as owner and a self node built from their profile,
+so workspace-scoped endpoints work immediately after the first login.
+
+`GET /api/v1/workspaces` requires a bearer token and returns
+`{"workspaces": [...]}`: every live workspace in which the caller has an active
+membership, each with that membership's `role` (`owner`, `editor`, or `viewer`),
+ordered by when the caller joined. Clients use it to choose the `workspace_id`
+for scoped requests.
 
 `POST /api/v1/workspaces` requires a bearer token and accepts a workspace
 `name` plus `create_self_node` (default `false`). Creation is atomic: it creates

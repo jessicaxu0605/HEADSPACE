@@ -230,17 +230,33 @@ of Headspace domain state and APIs.
 
 | Component | Responsibility and reuse boundary |
 | --- | --- |
-| `AuthFlow` | Stored-session check (shown as `BrainLoader`), login, and multi-step signup flow. Add authentication/onboarding steps here rather than creating a parallel flow. |
+| `AuthFlow` | Login and multi-step signup screens. Hands the login response to `useSession().signIn`; it does not store tokens or check sessions. Add authentication/onboarding steps here rather than creating a parallel flow. |
 | `SearchInterface` | Search input and submission UI. Extend for search-entry behavior; results belong to `ResultInterface`. |
 | `ResultInterface` | Search results, graph result states, and relationship overlay coordination. |
 | `NeighborhoodGraph` | Force-directed canvas graph and its graph-specific interaction/measurement behavior. Its physics are not general UI motion. |
 | `NodeDetails` | Detailed presentation of a selected memory node. Extend for additional node metadata. |
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
 | `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
-| `TextEntryInterface` | Manual memory-entry workflow and submission notifications. |
+| `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. |
+| `WorkspaceUnavailable` | Signed-in screen for an account whose workspaces failed to load or that has no active membership. |
 
 Small render helpers that are private to one feature, such as memory cards inside
 `SurfacedMemories`, may remain local until another feature needs them.
+
+## Session and workspace state
+
+`src/providers` holds the app-wide state every signed-in feature depends on. `App`
+nests `SessionProvider` > `WorkspaceProvider` and picks one screen from their state.
+
+| Provider / hook | Responsibility and reuse boundary |
+| --- | --- |
+| `SessionProvider` / `useSession()` | Whether this browser is signed in: `checking`, `signed-out`, or `signed-in` with the `user`, plus `signIn(loginResponse)` and `signOut()`. The access token in `api.ts` is the source of truth (read with `useSyncExternalStore`); `api.ts` clears it on a 401, which signs the reader out everywhere. Do not store tokens or session flags elsewhere. |
+| `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then remembered per user, then oldest). Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
+| `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, and `switchWorkspace`, for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
+
+The signed-in app is keyed by workspace id, so switching workspace remounts it and
+discards in-flight requests and per-workspace UI state. `ActiveWorkspaceProvider`
+pins the workspace to that screen so it stays stable while fading out.
 
 ## Internal and specialized implementations
 

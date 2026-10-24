@@ -8,6 +8,7 @@ import {
   waitForBrainLoaderFade,
   waitForBrainLoaderLeadIn,
 } from "../loading";
+import { useWorkspace } from "../providers/WorkspaceProvider";
 import {
   BlurredContainer,
   BrainLoader,
@@ -41,6 +42,7 @@ export default function RelationshipPage({
   onBack,
   onOpenNode,
 }: RelationshipPageProps) {
+  const { workspace } = useWorkspace();
   const [edge, setEdge] = useState<MemoryEdgeDetail | null>(null);
   const [status, setStatus] = useState("");
   const [statusIsError, setStatusIsError] = useState(false);
@@ -65,7 +67,7 @@ export default function RelationshipPage({
     setStatus("gathering this relationship…");
     setStatusIsError(false);
 
-    getEdgeDetail(edgeId, { signal: request.signal })
+    getEdgeDetail(workspace.id, edgeId, { signal: request.signal })
       .then(async (payload) => {
         await waitForBrainLoaderLeadIn(loaderStartedAt);
         if (request.signal.aborted) return;
@@ -83,7 +85,7 @@ export default function RelationshipPage({
       });
 
     return () => request.abort();
-  }, [edgeId]);
+  }, [edgeId, workspace.id]);
 
   const relationLabel = edge?.connector ?? "";
 

@@ -1384,6 +1384,15 @@ textarea:focus {
   text-align: center;
 }
 
+.workspace-unavailable-message {
+  max-width: 420px;
+  margin: 0 auto;
+  color: #77736a;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 1.04rem;
+  line-height: 1.55;
+}
+
 .auth-card h1 {
   max-width: 520px;
   margin: 10px 0 14px;

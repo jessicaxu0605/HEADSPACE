@@ -1,4 +1,4 @@
-"""Domain records for workspace creation."""
+"""Domain records for workspaces and memberships."""
 
 from __future__ import annotations
 
@@ -22,7 +22,16 @@ class Workspace:
 @dataclass(frozen=True)
 class CreatedWorkspace:
     workspace: Workspace
+    role: WorkspaceRole
     self_node_id: UUID | None
+
+
+@dataclass(frozen=True)
+class MemberWorkspace:
+    """A workspace as seen by one of its active members."""
+
+    workspace: Workspace
+    role: WorkspaceRole
 
 
 @dataclass(frozen=True)

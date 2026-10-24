@@ -1,35 +1,77 @@
-import { useEffect, useRef, useState } from "react";
-import { clearAccessToken, queryNodes, type NodeQueryMatch } from "./api";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { queryNodes, type NodeQueryMatch } from "./api";
 import AuthFlow from "./features/AuthFlow";
 import ResultInterface from "./features/ResultInterface";
 import SearchInterface from "./features/SearchInterface";
 import SurfacedMemories from "./features/SurfacedMemories";
 import TextEntryInterface from "./features/TextEntryInterface";
-import { PageTransition, TextButton } from "./component-library";
+import WorkspaceUnavailable from "./features/WorkspaceUnavailable";
+import { BrainLoader, PageTransition, TextButton } from "./component-library";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "./memory_graph";
+import { SessionProvider, useSession } from "./providers/SessionProvider";
+import {
+  ActiveWorkspaceProvider,
+  WorkspaceProvider,
+  useWorkspace,
+  useWorkspaceState,
+} from "./providers/WorkspaceProvider";
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof DOMException && error.name === "AbortError";
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState(false);
+  return (
+    <SessionProvider>
+      <WorkspaceProvider>
+        <AppScreens />
+      </WorkspaceProvider>
+    </SessionProvider>
+  );
+}
+
+// Chooses the one screen the session and workspace state call for. Each screen
+// has its own page key, so switching workspaces also remounts the app.
+function AppScreens() {
+  const session = useSession();
+  const workspaceState = useWorkspaceState();
+
+  let pageKey: string;
+  let screen: ReactNode;
+  if (session.status === "signed-out") {
+    pageKey = "auth";
+    screen = <AuthFlow onAuthenticated={session.signIn} />;
+  } else if (workspaceState.status === "error") {
+    pageKey = "workspace-error";
+    screen = (
+      <WorkspaceUnavailable
+        error={workspaceState.message}
+        onRetry={workspaceState.retry}
+        onLogout={session.signOut}
+      />
+    );
+  } else if (workspaceState.status === "empty") {
+    pageKey = "workspace-empty";
+    screen = <WorkspaceUnavailable onLogout={session.signOut} />;
+  } else if (workspaceState.status === "ready") {
+    pageKey = `workspace:${workspaceState.workspace.id}`;
+    screen = (
+      <ActiveWorkspaceProvider workspace={workspaceState}>
+        <AuthenticatedApp
+          key={workspaceState.workspace.id}
+          onLogout={session.signOut}
+        />
+      </ActiveWorkspaceProvider>
+    );
+  } else {
+    // Checking the stored session, then loading its workspaces.
+    pageKey = "loading";
+    screen = <BrainLoader label="Opening your headspace…" />;
+  }
 
   return (
-    <PageTransition
-      className="app-state-transition"
-      pageKey={authenticated ? "authenticated" : "auth"}
-    >
-      {authenticated ? (
-        <AuthenticatedApp
-          onLogout={() => {
-            clearAccessToken();
-            setAuthenticated(false);
-          }}
-        />
-      ) : (
-        <AuthFlow onAuthenticated={() => setAuthenticated(true)} />
-      )}
+    <PageTransition className="app-state-transition" pageKey={pageKey}>
+      {screen}
     </PageTransition>
   );
 }
@@ -48,6 +90,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
   const restoreResultsFocusRef = useRef(false);
+  const { workspace, canWrite } = useWorkspace();
   const graphExplorer = useNeighborhoodExplorer();
 
   useEffect(
@@ -78,7 +121,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
     setSearchStatusIsError(false);
 
     try {
-      const payload = await queryNodes(trimmedQuery, {
+      const payload = await queryNodes(workspace.id, trimmedQuery, {
         limit: 5,
         signal: request.signal,
       });
@@ -225,7 +268,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
           />
         </div>
 
-        {!isGraphPage && (
+        {!isGraphPage && canWrite && (
           <div className="continue-wrap">
             <TextButton
               className={`continue-button${hideContinueButton ? " is-search-active" : ""}`}
@@ -239,11 +282,13 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
         )}
       </section>
 
-      <TextEntryInterface
-        sectionRef={entrySectionRef}
-        textareaRef={textareaRef}
-        onViewRun={viewRun}
-      />
+      {canWrite && (
+        <TextEntryInterface
+          sectionRef={entrySectionRef}
+          textareaRef={textareaRef}
+          onViewRun={viewRun}
+        />
+      )}
       </main>
     </PageTransition>
   );

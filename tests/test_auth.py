@@ -166,6 +166,75 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(params, (session_id,))
 
 
+    async def test_creates_user_and_default_workspace_in_one_transaction(self):
+        now = datetime.now(UTC)
+        user_row = {
+            "id": uuid4(),
+            "email": "jessica@example.com",
+            "name": "Jessica Xu",
+            "created_at": now,
+            "birthday": None,
+            "about": "Builds memory tools.",
+        }
+        events = []
+
+        class Cursor:
+            async def fetchone(self):
+                return user_row
+
+        class Transaction:
+            async def __aenter__(self):
+                events.append("begin")
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                events.append("rollback" if exc_type else "commit")
+                return False
+
+        class Connection:
+            def transaction(self):
+                return Transaction()
+
+            async def execute(self, query, params):
+                events.append("insert user")
+                return Cursor()
+
+        class ConnectionContext:
+            def __init__(self, connection):
+                self.connection = connection
+
+            async def __aenter__(self):
+                return self.connection
+
+            async def __aexit__(self, exc_type, exc, traceback):
+                return False
+
+        connection = Connection()
+
+        async def insert_workspace(conn, **kwargs):
+            events.append("insert workspace")
+            self.assertIs(conn, connection)
+            self.assertEqual(kwargs["user"].id, user_row["id"])
+            self.assertEqual(kwargs["name"], "Personal")
+            self.assertTrue(kwargs["create_self_node"])
+
+        with patch(
+            "app.auth.store.get_async_connection",
+            return_value=ConnectionContext(connection),
+        ), patch("app.auth.store.insert_workspace", side_effect=insert_workspace):
+            user = await PostgresAuthStore().create_user(
+                email=user_row["email"],
+                name=user_row["name"],
+                password_hash="$argon2id$hash",
+                birthday=None,
+                about=user_row["about"],
+            )
+
+        self.assertEqual(user.id, user_row["id"])
+        self.assertEqual(
+            events, ["begin", "insert user", "insert workspace", "commit"]
+        )
+
+
 class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         private_key, public_key = _keys()

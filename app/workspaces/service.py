@@ -1,9 +1,9 @@
-"""Workspace creation orchestration."""
+"""Workspace creation and membership listing."""
 
 from __future__ import annotations
 
 from app.auth.models import AuthenticatedSession
-from app.workspaces.models import CreatedWorkspace
+from app.workspaces.models import CreatedWorkspace, MemberWorkspace
 from app.workspaces.store import WorkspaceStore
 
 
@@ -22,4 +22,13 @@ class WorkspaceService:
             user=authenticated.user,
             name=name,
             create_self_node=create_self_node,
+        )
+
+    async def list_workspaces(
+        self,
+        *,
+        authenticated: AuthenticatedSession,
+    ) -> list[MemberWorkspace]:
+        return await self._store.list_member_workspaces(
+            user_id=authenticated.user.id
         )

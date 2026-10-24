@@ -10,6 +10,12 @@ from psycopg.errors import UniqueViolation
 
 from app.auth.models import AuthenticatedSession, Session, User, UserWithPassword
 from app.persistence.postgres.connection import get_async_connection
+from app.workspaces.store import insert_workspace
+
+
+# Every account starts with one workspace it owns, so workspace-scoped
+# endpoints work immediately after signup.
+DEFAULT_WORKSPACE_NAME = "Personal"
 
 
 class EmailAlreadyExistsError(ValueError):
@@ -76,24 +82,32 @@ class PostgresAuthStore:
     ) -> User:
         try:
             async with get_async_connection() as conn:
-                row = await (
-                    await conn.execute(
-                        """
-                        INSERT INTO users (
-                            email, name, password_hash, display_name,
-                            birthday, about
+                async with conn.transaction():
+                    row = await (
+                        await conn.execute(
+                            """
+                            INSERT INTO users (
+                                email, name, password_hash, display_name,
+                                birthday, about
+                            )
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                            RETURNING id, email, name, created_at,
+                                      birthday, about
+                            """,
+                            (email, name, password_hash, name, birthday, about),
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        RETURNING id, email, name, created_at,
-                                  birthday, about
-                        """,
-                        (email, name, password_hash, name, birthday, about),
+                    ).fetchone()
+                    assert row is not None
+                    user = _user(row)
+                    await insert_workspace(
+                        conn,
+                        user=user,
+                        name=DEFAULT_WORKSPACE_NAME,
+                        create_self_node=True,
                     )
-                ).fetchone()
         except UniqueViolation as exc:
             raise EmailAlreadyExistsError("Email is already in use.") from exc
-        assert row is not None
-        return _user(row)
+        return user
 
     async def get_user_by_email(self, *, email: str) -> UserWithPassword | None:
         async with get_async_connection() as conn:

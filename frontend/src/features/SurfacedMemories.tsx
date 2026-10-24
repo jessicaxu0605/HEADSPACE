@@ -10,6 +10,7 @@ import type {
   MemoryLandingEdge,
   MemoryNodeReference,
 } from "../memory_graph";
+import { useWorkspace } from "../providers/WorkspaceProvider";
 
 type SurfacedMemoriesProps = {
   hidden: boolean;
@@ -18,15 +19,17 @@ type SurfacedMemoriesProps = {
 
 // Anchors shown on recent loads are sent back as exclusions so each visit
 // surfaces something new. Upcoming items are a separate list and never excluded.
-const RECENT_ANCHORS_KEY = "headspace:recent-landing-anchors";
+// Anchor IDs belong to one workspace, so each workspace keeps its own list.
+const recentAnchorsKey = (workspaceId: string): string =>
+  `headspace:recent-landing-anchors:${workspaceId}`;
 const RECENT_ANCHOR_LIMIT = 12;
 
 type RecentAnchor = { kind: "node" | "edge"; id: string };
 
-const readRecentAnchors = (): RecentAnchor[] => {
+const readRecentAnchors = (workspaceId: string): RecentAnchor[] => {
   try {
     const stored = JSON.parse(
-      window.localStorage.getItem(RECENT_ANCHORS_KEY) ?? "[]",
+      window.localStorage.getItem(recentAnchorsKey(workspaceId)) ?? "[]",
     ) as unknown;
     return Array.isArray(stored) ? (stored as RecentAnchor[]) : [];
   } catch {
@@ -34,14 +37,20 @@ const readRecentAnchors = (): RecentAnchor[] => {
   }
 };
 
-const rememberAnchors = (cards: MemoryLandingCard[]): void => {
+const rememberAnchors = (
+  workspaceId: string,
+  cards: MemoryLandingCard[],
+): void => {
   const shown = cards.map(({ anchor }) => ({ kind: anchor.kind, id: anchor.id }));
-  const recent = [...shown, ...readRecentAnchors()].slice(
+  const recent = [...shown, ...readRecentAnchors(workspaceId)].slice(
     0,
     RECENT_ANCHOR_LIMIT,
   );
   try {
-    window.localStorage.setItem(RECENT_ANCHORS_KEY, JSON.stringify(recent));
+    window.localStorage.setItem(
+      recentAnchorsKey(workspaceId),
+      JSON.stringify(recent),
+    );
   } catch {
     // Storage is a convenience; without it the draw just repeats more often.
   }
@@ -222,20 +231,21 @@ export default function SurfacedMemories({
   hidden,
   onOpenNode,
 }: SurfacedMemoriesProps) {
+  const { workspace } = useWorkspace();
   const [landing, setLanding] = useState<MemoryLanding | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const request = new AbortController();
-    const recent = readRecentAnchors();
-    getLandingMemories({
+    const recent = readRecentAnchors(workspace.id);
+    getLandingMemories(workspace.id, {
       excludeNodeIds: recent.filter((a) => a.kind === "node").map((a) => a.id),
       excludeEdgeIds: recent.filter((a) => a.kind === "edge").map((a) => a.id),
       signal: request.signal,
     })
       .then((landing) => {
         setLanding(landing);
-        rememberAnchors(landing.memories);
+        rememberAnchors(workspace.id, landing.memories);
       })
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -243,7 +253,7 @@ export default function SurfacedMemories({
         }
       });
     return () => request.abort();
-  }, []);
+  }, [workspace.id]);
 
   const upcoming = landing?.upcoming ?? [];
   const memories = landing?.memories ?? [];

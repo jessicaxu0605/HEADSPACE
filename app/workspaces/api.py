@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.auth.api import get_current_session
 from app.auth.models import AuthenticatedSession
-from app.workspaces.models import CreatedWorkspace, Workspace
+from app.workspaces.models import (
+    CreatedWorkspace,
+    MemberWorkspace,
+    Workspace,
+    WorkspaceRole,
+)
 from app.workspaces.service import WorkspaceService
 from app.workspaces.store import PostgresWorkspaceStore
 
@@ -38,17 +43,26 @@ class WorkspaceResponse(BaseModel):
     id: UUID
     name: str
     created_by_user_id: UUID
-    role: str = "owner"
+    role: WorkspaceRole
     created_at: datetime
 
     @classmethod
-    def from_workspace(cls, workspace: Workspace) -> "WorkspaceResponse":
+    def from_workspace(
+        cls, workspace: Workspace, role: WorkspaceRole
+    ) -> "WorkspaceResponse":
         return cls(
             id=workspace.id,
             name=workspace.name,
             created_by_user_id=workspace.created_by_user_id,
+            role=role,
             created_at=workspace.created_at,
         )
+
+    @classmethod
+    def from_member_workspace(
+        cls, member_workspace: MemberWorkspace
+    ) -> "WorkspaceResponse":
+        return cls.from_workspace(member_workspace.workspace, member_workspace.role)
 
 
 class CreateWorkspaceResponse(BaseModel):
@@ -58,9 +72,15 @@ class CreateWorkspaceResponse(BaseModel):
     @classmethod
     def from_created(cls, created: CreatedWorkspace) -> "CreateWorkspaceResponse":
         return cls(
-            workspace=WorkspaceResponse.from_workspace(created.workspace),
+            workspace=WorkspaceResponse.from_workspace(
+                created.workspace, created.role
+            ),
             self_node_id=created.self_node_id,
         )
+
+
+class WorkspaceListResponse(BaseModel):
+    workspaces: list[WorkspaceResponse]
 
 
 @lru_cache(maxsize=1)
@@ -82,3 +102,19 @@ async def create_workspace(
         create_self_node=request.create_self_node,
     )
     return CreateWorkspaceResponse.from_created(created)
+
+
+@router.get("", response_model=WorkspaceListResponse)
+async def list_workspaces(
+    authenticated: AuthenticatedSession = Depends(get_current_session),
+    service: WorkspaceService = Depends(get_workspace_service),
+) -> WorkspaceListResponse:
+    """List the workspaces the current user is an active member of."""
+
+    member_workspaces = await service.list_workspaces(authenticated=authenticated)
+    return WorkspaceListResponse(
+        workspaces=[
+            WorkspaceResponse.from_member_workspace(member_workspace)
+            for member_workspace in member_workspaces
+        ]
+    )

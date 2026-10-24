@@ -7,6 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { createManualIngestion } from "../api";
+import { useWorkspace } from "../providers/WorkspaceProvider";
 import {
   AutoGrowingTextArea,
   BlurredContainer,
@@ -60,6 +61,7 @@ export default function TextEntryInterface({
   textareaRef,
   onViewRun,
 }: TextEntryInterfaceProps) {
+  const { workspace } = useWorkspace();
   const [content, setContent] = useState("");
   const [notifications, setNotifications] = useState<SubmissionNotification[]>(
     [],
@@ -96,6 +98,7 @@ export default function TextEntryInterface({
     async (request: SubmissionNotification) => {
       try {
         const run = await createManualIngestion(
+          workspace.id,
           request.content,
           request.requestId,
         );
@@ -125,7 +128,7 @@ export default function TextEntryInterface({
         );
       }
     },
-    [],
+    [workspace.id],
   );
 
   const retrySubmission = (notification: SubmissionNotification): void => {

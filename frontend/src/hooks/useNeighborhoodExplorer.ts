@@ -6,6 +6,7 @@ import {
 } from "../api";
 import type { MemoryNodeReference, MemoryRunGraph } from "../memory_graph";
 import { waitForBrainLoaderFade, waitForBrainLoaderLeadIn } from "../loading";
+import { useWorkspace } from "../providers/WorkspaceProvider";
 
 // The graph page centers on one node, or shows everything one ingestion run touched.
 export type GraphSelection =
@@ -75,6 +76,8 @@ export const runGraphToNeighborhood = (
 };
 
 export default function useNeighborhoodExplorer() {
+  const { workspace } = useWorkspace();
+  const workspaceId = workspace.id;
   const [selection, setSelection] = useState<GraphSelection | null>(null);
   const [graph, setGraph] = useState<NodeNeighborhoodResponse | null>(null);
   const [status, setStatus] = useState("");
@@ -130,10 +133,11 @@ export default function useNeighborhoodExplorer() {
       setStatusIsError(false);
 
       try {
-        const payload = await getNodeNeighborhood(nextSelection.node_id, {
-          depth: 1,
-          signal: request.signal,
-        });
+        const payload = await getNodeNeighborhood(
+          workspaceId,
+          nextSelection.node_id,
+          { depth: 1, signal: request.signal },
+        );
         await waitForBrainLoaderLeadIn(loaderStartedAt);
         if (graphControllerRef.current !== request) return;
         setGraph(payload);
@@ -155,7 +159,7 @@ export default function useNeighborhoodExplorer() {
         }
       }
     },
-    [resetExpansions],
+    [resetExpansions, workspaceId],
   );
 
   const openRun = useCallback(
@@ -172,7 +176,7 @@ export default function useNeighborhoodExplorer() {
       setStatusIsError(false);
 
       try {
-        const payload = await getIngestionGraph(runId, {
+        const payload = await getIngestionGraph(workspaceId, runId, {
           signal: request.signal,
         });
         await waitForBrainLoaderLeadIn(loaderStartedAt);
@@ -196,7 +200,7 @@ export default function useNeighborhoodExplorer() {
         }
       }
     },
-    [resetExpansions],
+    [resetExpansions, workspaceId],
   );
 
   // Adds one more degree of connections around a node already in the open graph.
@@ -235,7 +239,9 @@ export default function useNeighborhoodExplorer() {
       };
 
       try {
-        const payload = await getNodeNeighborhood(nodeId, { depth: 1 });
+        const payload = await getNodeNeighborhood(workspaceId, nodeId, {
+          depth: 1,
+        });
         if (!isCurrentExpansion()) return;
         expandedNodeIdsRef.current.add(nodeId);
 
@@ -260,7 +266,7 @@ export default function useNeighborhoodExplorer() {
         if (isCurrentExpansion()) expandingNodeIdsRef.current.delete(nodeId);
       }
     },
-    [graph],
+    [graph, workspaceId],
   );
 
   return {
