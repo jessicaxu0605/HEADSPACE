@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes } from "react";
 
 export type TextFieldProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -8,20 +8,20 @@ export type TextFieldProps = Omit<
   onValueChange: (value: string) => void;
 };
 
-export default function TextField({
-  value,
-  onValueChange,
-  className = "",
-  ...inputProps
-}: TextFieldProps) {
-  const inputClassName = `text-field-input${className ? ` ${className}` : ""}`;
+const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
+  function TextField({ value, onValueChange, className = "", ...inputProps }, ref) {
+    const inputClassName = `text-field-input${className ? ` ${className}` : ""}`;
 
-  return (
-    <input
-      {...inputProps}
-      className={inputClassName}
-      value={value}
-      onChange={(event) => onValueChange(event.target.value)}
-    />
-  );
-}
+    return (
+      <input
+        {...inputProps}
+        ref={ref}
+        className={inputClassName}
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+      />
+    );
+  },
+);
+
+export default TextField;

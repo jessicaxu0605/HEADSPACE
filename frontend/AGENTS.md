@@ -6,8 +6,8 @@ Before changing frontend code, read
 Use the registered components, hooks, and motion tokens before creating new UI
 implementations. Prefer composing or extending an existing library component when it
 already owns the relevant behavior. Do not recreate validation timing, inline
-warnings, auto-growing text areas, blurred edges, loaders, or presence/page
-transitions inside a feature component.
+warnings, auto-growing text areas, blurred edges, underlined text buttons, loaders,
+or presence/page transitions inside a feature component.
 
 Import reusable UI through `src/component-library` rather than deep-importing its
 implementation files. `FadeSwitch` is internal to the motion package and is not a

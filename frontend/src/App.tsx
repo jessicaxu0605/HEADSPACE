@@ -11,7 +11,7 @@ import ResultInterface from "./components/ResultInterface";
 import SearchInterface from "./components/SearchInterface";
 import SurfacedMemories from "./components/SurfacedMemories";
 import TextEntryInterface from "./components/TextEntryInterface";
-import { PageTransition } from "./component-library";
+import { PageTransition, TextButton } from "./component-library";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "./memory_graph";
 
@@ -268,15 +268,14 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
 
         {!isGraphPage && (
           <div className="continue-wrap">
-            <button
-              className={`text-button continue-button${hideContinueButton ? " is-search-active" : ""}`}
-              type="button"
+            <TextButton
+              className={`continue-button${hideContinueButton ? " is-search-active" : ""}`}
               aria-hidden={hideContinueButton ? true : undefined}
               tabIndex={hideContinueButton ? -1 : undefined}
               onClick={openEntry}
             >
               add a thought&nbsp; ↓
-            </button>
+            </TextButton>
           </div>
         )}
       </section>

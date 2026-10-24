@@ -11,6 +11,7 @@ import {
   AutoGrowingTextArea,
   BlurredContainer,
   PresenceTransition,
+  TextButton,
   motionDurations,
 } from "../component-library";
 
@@ -46,6 +47,9 @@ const starterPrompts = [
   "How was your day?",
 ] as const;
 
+// The submit button waits for a pause in typing, like field validation.
+const submitRevealDelayMs = 500;
+
 const newRequestId = (): string => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   return `manual-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -63,31 +67,13 @@ export default function TextEntryInterface({
   const [closingNotificationIds, setClosingNotificationIds] = useState<
     Set<string>
   >(new Set());
-  const [showSubmit, setShowSubmit] = useState(false);
-  const revealButtonTimeoutRef = useRef<number | undefined>(undefined);
   const isMountedRef = useRef(true);
   const hasText = Boolean(content.trim());
-
-  useEffect(() => {
-    if (!hasText) {
-      window.clearTimeout(revealButtonTimeoutRef.current);
-      revealButtonTimeoutRef.current = undefined;
-      setShowSubmit(false);
-      return;
-    }
-    if (!showSubmit && revealButtonTimeoutRef.current === undefined) {
-      revealButtonTimeoutRef.current = window.setTimeout(() => {
-        revealButtonTimeoutRef.current = undefined;
-        setShowSubmit(true);
-      }, 500);
-    }
-  }, [hasText, showSubmit]);
 
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      window.clearTimeout(revealButtonTimeoutRef.current);
     };
   }, []);
 
@@ -169,9 +155,6 @@ export default function TextEntryInterface({
     };
     setNotifications((current) => [...current, request]);
     setContent("");
-    setShowSubmit(false);
-    window.clearTimeout(revealButtonTimeoutRef.current);
-    revealButtonTimeoutRef.current = undefined;
     window.requestAnimationFrame(() => textareaRef.current?.focus());
     void submitInBackground(request);
   };
@@ -204,21 +187,16 @@ export default function TextEntryInterface({
           />
           <PresenceTransition
             enter="fade-up"
+            enterDelay={submitRevealDelayMs}
             enterDuration={motionDurations.page}
             exit="fade-up"
             exitDuration={motionDurations.standard}
             unmountOnExit={false}
-            visible={showSubmit}
+            visible={hasText}
           >
-            <button
-              id="submit-button"
-              className="text-button"
-              type="submit"
-              aria-hidden={!showSubmit}
-              tabIndex={showSubmit ? 0 : -1}
-            >
+            <TextButton className="ingestion-submit" type="submit">
               remember this&nbsp; →
-            </button>
+            </TextButton>
           </PresenceTransition>
         </form>
       </PresenceTransition>

@@ -1,4 +1,5 @@
 import type { FormEvent, RefObject } from "react";
+import { TextField } from "../component-library";
 
 type SearchInterfaceProps = {
   inputRef: RefObject<HTMLInputElement | null>;
@@ -32,7 +33,7 @@ export default function SearchInterface({
         <circle cx="11" cy="11" r="6.5" />
         <path d="m16 16 4 4" />
       </svg>
-      <input
+      <TextField
         ref={inputRef}
         type="search"
         name="query"
@@ -41,7 +42,7 @@ export default function SearchInterface({
         placeholder="pick your brain"
         autoComplete="off"
         value={query}
-        onChange={(event) => onQueryChange(event.target.value)}
+        onValueChange={onQueryChange}
         onFocus={() => onFocusChange(true)}
         onBlur={() => onFocusChange(false)}
       />

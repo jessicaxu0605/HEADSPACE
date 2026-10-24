@@ -9,6 +9,7 @@ import { ABOUT_PROMPTS } from "../auth_prompts";
 import {
   PageTransition,
   PresenceTransition,
+  TextButton,
   ValidatedTextArea,
   ValidatedTextField,
 } from "../component-library";
@@ -179,12 +180,12 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
           <div className="auth-welcome-kicker">get in the right</div>
           <h1 id="auth-title">HEADSPACE</h1>
           <div className="auth-entry-actions">
-            <button className="auth-entry-action" onClick={() => goTo("credentials")}>
+            <TextButton className="auth-entry-action" onClick={() => goTo("credentials")}>
               get started →
-            </button>
-            <button className="auth-entry-action" onClick={() => goTo("login")}>
+            </TextButton>
+            <TextButton className="auth-entry-action" onClick={() => goTo("login")}>
               returning →
-            </button>
+            </TextButton>
           </div>
         </section>
           )}
@@ -234,16 +235,15 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
               />
             </div>
             <div className="auth-login-actions">
-              <button
+              <TextButton
                 className="auth-entry-action"
-                type="button"
                 onClick={() => goTo("welcome")}
               >
                 ← back
-              </button>
-              <button className="auth-entry-action" disabled={submitting}>
+              </TextButton>
+              <TextButton className="auth-entry-action" type="submit" disabled={submitting}>
                 {submitting ? "logging in…" : "log in →"}
-              </button>
+              </TextButton>
             </div>
           </form>
         </section>
@@ -289,14 +289,13 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
               />
             </div>
             <div className="auth-signup-actions">
-              <button
+              <TextButton
                 className="auth-entry-action"
-                type="button"
                 onClick={() => goTo("welcome")}
               >
                 ← back
-              </button>
-              <button className="auth-entry-action">continue →</button>
+              </TextButton>
+              <TextButton className="auth-entry-action" type="submit">continue →</TextButton>
             </div>
           </form>
         </section>
@@ -340,14 +339,13 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
               </div>
             </div>
             <div className="auth-signup-actions">
-              <button
+              <TextButton
                 className="auth-entry-action"
-                type="button"
                 onClick={() => goTo("credentials")}
               >
                 ← back
-              </button>
-              <button className="auth-entry-action">continue →</button>
+              </TextButton>
+              <TextButton className="auth-entry-action" type="submit">continue →</TextButton>
             </div>
           </form>
         </section>
@@ -388,24 +386,22 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
               className="auth-about-entry"
             />
             <div className="auth-signup-actions auth-signup-actions-wide">
-              <button
+              <TextButton
                 className="auth-entry-action"
-                type="button"
                 onClick={() => goTo("profile")}
               >
                 ← back
-              </button>
-              <button className="auth-entry-action" disabled={submitting}>
+              </TextButton>
+              <TextButton className="auth-entry-action" type="submit" disabled={submitting}>
                 {submitting ? "creating your space…" : "enter →"}
-              </button>
-              <button
+              </TextButton>
+              <TextButton
                 className="auth-entry-action"
-                type="button"
                 disabled={submitting}
                 onClick={() => void finishSignup(undefined, true)}
               >
                 skip
-              </button>
+              </TextButton>
             </div>
           </form>
         </section>

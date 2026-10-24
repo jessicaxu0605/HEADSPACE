@@ -32,6 +32,7 @@ import {
   InlineWarning,
   PageTransition,
   PresenceTransition,
+  TextButton,
   TextField,
   ValidatedTextArea,
   ValidatedTextField,
@@ -49,6 +50,7 @@ Adjust the relative path as needed, but keep imports on the package barrel.
 
 | Need | Use |
 | --- | --- |
+| Quiet text action with an underline that draws in on hover/focus | `TextButton` |
 | Standard one-line controlled input | `TextField` |
 | One-line input with delayed and blur validation | `ValidatedTextField` |
 | Expanding, softly scrolling multiline input | `AutoGrowingTextArea` |
@@ -72,7 +74,8 @@ A controlled, single-line input with Headspace's shared text-field styling.
 
 Use it for plain text, email, password, date, and other native input types when the
 screen does not need inline validation. Pass `value` and `onValueChange`; other native
-input attributes pass through.
+input attributes and a `ref` pass through. Context-specific selectors (for example the
+search field's `input[type="search"]` rules) may restyle it.
 
 Do not build another styled `<input>` for a normal form field. Do not use this when a
 warning should appear after the user pauses or leaves the field; use
@@ -116,6 +119,24 @@ A subtle, accessible warning that fades beneath its owning input.
 Use it directly only for a custom input that cannot use one of the validated
 wrappers. Pass an empty or missing `message` to hide it. Do not add ad hoc error
 paragraphs or custom warning timers beside standard fields.
+
+### Buttons
+
+#### `TextButton`
+
+A borderless serif text button whose underline draws in from the left on hover and
+keyboard focus and retracts on leave. It owns the reset, underline animation, focus
+treatment, and disabled state.
+
+Use it for Headspace's quiet text actions: "continue →", "← back", "remember this →",
+and similar. Native button attributes and a `ref` pass through. It defaults to
+`type="button"`, so pass `type="submit"` explicitly for form submission. Add a
+feature class only for placement or tone (for example `auth-entry-action` sets the
+softer auth color; `ingestion-submit` sets layout).
+
+Do not re-implement the `::after` underline in feature CSS. It is not for icon-only
+controls, dismiss buttons, list/card buttons, or the `graph-back` style links, which
+change color on hover rather than drawing an underline.
 
 ### Containers
 
@@ -219,7 +240,8 @@ Small render helpers that are private to one feature, such as memory cards insid
 - `NeighborhoodGraph` uses a canvas force simulation; shared DOM motion components do
   not apply to it.
 - Hover, focus, underline, border, and input-height transitions are interaction or
-  layout behavior, not presence transitions.
+  layout behavior, not presence transitions. The animated text-action underline is
+  owned by `TextButton`.
 
 ## Adding to the library
 
@@ -227,7 +249,8 @@ Before adding a component, search this registry, `src/component-library`, and cu
 call sites. If no existing component composes cleanly:
 
 1. Keep the API controlled and explicit.
-2. Put inputs in `inputs/`, hooks in `hooks/`, and motion primitives in `motion/`.
+2. Put inputs in `inputs/`, buttons in `buttons/`, hooks in `hooks/`, and motion
+   primitives in `motion/`.
    Place an uncategorized visual container at the library root only when it does not
    fit an existing category.
 3. Reuse existing primitives and tokens internally.

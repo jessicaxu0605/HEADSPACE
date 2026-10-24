@@ -37,7 +37,7 @@ export type NodeNeighborhoodResponse = MemoryGraphNeighborhood;
 
 export type UserProfile = {
   id: string;
-  login: string;
+  email: string;
   name: string;
   birthday: string | null;
   about: string | null;
@@ -139,7 +139,7 @@ export const createUser = async ({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      login: email.trim().toLowerCase(),
+      email: email.trim().toLowerCase(),
       password,
       name: `${firstName.trim()} ${lastName.trim()}`.trim(),
       about: about?.trim() || null,
@@ -154,7 +154,7 @@ export const login = async (
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      login: email.trim().toLowerCase(),
+      email: email.trim().toLowerCase(),
       password,
     }),
   });
