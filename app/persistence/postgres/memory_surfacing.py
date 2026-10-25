@@ -851,14 +851,26 @@ DEFAULT_LANDING_SOURCES: tuple[SourceConfig, ...] = (
 # --- Store and subgraph expansion --------------------------------------------
 
 
-async def _expand_upcoming(
+_NODE_LOAD_BATCH_SIZE = 1_000
+
+
+@dataclass(frozen=True, slots=True)
+class _MemoryDraft:
+    anchor: SurfaceAnchor
+    pinned: bool
+    focus_ids: tuple[UUID, ...]
+    node_ids: frozenset[UUID]
+    edges: list[SurfacedEdge]
+
+
+async def _draft_upcoming(
     conn: Any,
     ctx: SurfacingContext,
     batches: Sequence[Sequence[SurfaceAnchor]],
     *,
     limit: int,
     adjacent_edges: int,
-) -> list[SurfacedMemory]:
+) -> list[_MemoryDraft]:
     anchors = [anchor for batch in batches for anchor in batch]
     anchors.sort(
         key=lambda anchor: (
@@ -868,7 +880,7 @@ async def _expand_upcoming(
         )
     )
 
-    upcoming = []
+    upcoming: list[_MemoryDraft] = []
     for anchor in anchors[:limit]:
         edges = await _context_edges(
             conn,
@@ -877,13 +889,14 @@ async def _expand_upcoming(
             exclude_edge_ids=[],
             limit=adjacent_edges,
         )
-        nodes = await _load_nodes(conn, ctx, {anchor.id} | _endpoints(edges))
-        nodes.sort(key=lambda node: (node.node_id != anchor.id, node.title.casefold()))
-        upcoming.append(SurfacedMemory(anchor, True, nodes, edges))
+        node_ids = {anchor.id} | _endpoints(edges)
+        upcoming.append(
+            _MemoryDraft(anchor, True, (anchor.id,), frozenset(node_ids), edges)
+        )
     return upcoming
 
 
-async def _expand_ranked(
+async def _draft_ranked(
     conn: Any,
     ctx: SurfacingContext,
     sources: Sequence[SourceConfig],
@@ -894,9 +907,9 @@ async def _expand_ranked(
     rng: random.Random | None,
     shown_node_ids: set[UUID] | None = None,
     shown_edge_ids: set[UUID] | None = None,
-) -> list[SurfacedMemory]:
+) -> list[_MemoryDraft]:
     ranked = rank_anchors(list(zip(sources, batches)), rng=rng)
-    memories: list[SurfacedMemory] = []
+    memories: list[_MemoryDraft] = []
     shown_node_ids = set(shown_node_ids or ())
     shown_edge_ids = set(shown_edge_ids or ())
     taken_by_source: dict[int, int] = {}
@@ -913,17 +926,56 @@ async def _expand_ranked(
             shown = shown_edge_ids if item.anchor.kind == "edge" else shown_node_ids
             if item.anchor.id in shown:
                 continue
-        memory = await _expand(conn, ctx, item, expansion, shown_edge_ids)
+        memory = await _expand_draft(conn, ctx, item, expansion, shown_edge_ids)
         if memory is None:
             continue
         memories.append(memory)
-        shown_node_ids |= {node.node_id for node in memory.nodes}
+        shown_node_ids |= set(memory.node_ids)
         shown_edge_ids |= {edge.edge_id for edge in memory.edges}
         if not item.pinned:
             taken_by_source[item.source_index] = (
                 taken_by_source.get(item.source_index, 0) + 1
             )
             unpinned += 1
+    return memories
+
+
+async def _materialize_drafts(
+    conn: Any,
+    ctx: SurfacingContext,
+    drafts: Sequence[_MemoryDraft],
+    *,
+    node_batch_size: int = _NODE_LOAD_BATCH_SIZE,
+) -> list[SurfacedMemory | None]:
+    """Load nodes for every card in request-sized batches, then rebuild cards."""
+
+    all_node_ids = {node_id for draft in drafts for node_id in draft.node_ids}
+    loaded: dict[UUID, SurfacedNode] = {}
+    ordered_ids = sorted(all_node_ids, key=lambda node_id: node_id.int)
+    for start in range(0, len(ordered_ids), node_batch_size):
+        nodes = await _load_nodes(
+            conn, ctx, ordered_ids[start : start + node_batch_size]
+        )
+        loaded.update((node.node_id, node) for node in nodes)
+
+    memories: list[SurfacedMemory | None] = []
+    for draft in drafts:
+        nodes = [loaded[node_id] for node_id in draft.node_ids if node_id in loaded]
+        if draft.anchor.kind == "node" and draft.anchor.id not in loaded:
+            memories.append(None)
+            continue
+        focus_order = {
+            node_id: index for index, node_id in enumerate(draft.focus_ids)
+        }
+        nodes.sort(
+            key=lambda node: (
+                focus_order.get(node.node_id, len(focus_order)),
+                node.title.casefold(),
+            )
+        )
+        memories.append(
+            SurfacedMemory(draft.anchor, draft.pinned, nodes, draft.edges)
+        )
     return memories
 
 
@@ -954,18 +1006,18 @@ class PostgresMemorySurfacingStore:
                 conn, [*upcoming_queries, *memory_queries]
             )
             split = len(upcoming_queries)
-            upcoming = await _expand_upcoming(
+            upcoming_drafts = await _draft_upcoming(
                 conn,
                 ctx,
                 batches[:split],
                 limit=max_upcoming,
                 adjacent_edges=adjacent_edges,
             )
-            upcoming_node_ids = {item.anchor.id for item in upcoming}
+            upcoming_node_ids = {item.anchor.id for item in upcoming_drafts}
             upcoming_edge_ids = {
-                edge.edge_id for item in upcoming for edge in item.edges
+                edge.edge_id for item in upcoming_drafts for edge in item.edges
             }
-            memories = await _expand_ranked(
+            memory_drafts = await _draft_ranked(
                 conn,
                 ctx,
                 memory_sources,
@@ -976,6 +1028,12 @@ class PostgresMemorySurfacingStore:
                 shown_node_ids=upcoming_node_ids,
                 shown_edge_ids=upcoming_edge_ids,
             )
+            materialized = await _materialize_drafts(
+                conn, ctx, [*upcoming_drafts, *memory_drafts]
+            )
+            split = len(upcoming_drafts)
+            upcoming = [item for item in materialized[:split] if item is not None]
+            memories = [item for item in materialized[split:] if item is not None]
         return upcoming, memories
 
     async def surface_upcoming(
@@ -996,13 +1054,18 @@ class PostgresMemorySurfacingStore:
             batches = await _fetch_discovery_batches(
                 conn, [source.discovery_query(ctx, limit) for source in sources]
             )
-            return await _expand_upcoming(
+            drafts = await _draft_upcoming(
                 conn,
                 ctx,
                 batches,
                 limit=limit,
                 adjacent_edges=adjacent_edges,
             )
+            return [
+                item
+                for item in await _materialize_drafts(conn, ctx, drafts)
+                if item is not None
+            ]
 
     async def surface_memories(
         self,
@@ -1021,7 +1084,7 @@ class PostgresMemorySurfacingStore:
                     for config in sources
                 ],
             )
-            return await _expand_ranked(
+            drafts = await _draft_ranked(
                 conn,
                 ctx,
                 sources,
@@ -1030,16 +1093,21 @@ class PostgresMemorySurfacingStore:
                 expansion=expansion,
                 rng=rng,
             )
+            return [
+                item
+                for item in await _materialize_drafts(conn, ctx, drafts)
+                if item is not None
+            ]
 
 
-async def _expand(
+async def _expand_draft(
     conn: Any,
     ctx: SurfacingContext,
     item: RankedAnchor,
     expansion: ExpansionConfig,
     shown_edge_ids: set[UUID],
-) -> SurfacedMemory | None:
-    """Build the card subgraph: anchor, context edges, related edges, evidence."""
+) -> _MemoryDraft | None:
+    """Build card edges and collect node IDs without loading nodes yet."""
 
     anchor = item.anchor
     if anchor.kind == "edge":
@@ -1071,17 +1139,13 @@ async def _expand(
     evidence = await _best_evidence(conn, ctx, [edge.edge_id for edge in edges])
     edges = [replace(edge, evidence=evidence.get(edge.edge_id)) for edge in edges]
 
-    nodes = await _load_nodes(conn, ctx, node_ids)
-    if anchor.kind == "node" and all(node.node_id != anchor.id for node in nodes):
-        return None
-    focus_order = {node_id: index for index, node_id in enumerate(focus_ids)}
-    nodes.sort(
-        key=lambda node: (
-            focus_order.get(node.node_id, len(focus_order)),
-            node.title.casefold(),
-        )
+    return _MemoryDraft(
+        anchor,
+        item.pinned,
+        tuple(focus_ids),
+        frozenset(node_ids),
+        edges,
     )
-    return SurfacedMemory(anchor, item.pinned, nodes, edges)
 
 
 async def _load_edges(

@@ -14,7 +14,9 @@ from app.graph.queries.memory_surfacing import (
 from app.persistence.postgres.memory_surfacing import (
     DEFAULT_LANDING_SOURCES,
     DEFAULT_UPCOMING_SOURCES,
+    _MemoryDraft,
     _fetch_discovery_batches,
+    _materialize_drafts,
 )
 
 
@@ -88,6 +90,56 @@ class DiscoveryUnionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(batches, [])
         self.assertEqual(conn.calls, [])
+
+
+class NodeExpansionBatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_loads_nodes_for_all_cards_in_one_query(self) -> None:
+        first_id, second_id = uuid4(), uuid4()
+        conn = _Connection(
+            [
+                {
+                    "id": first_id,
+                    "node_type": "person",
+                    "name": "First",
+                    "summary": None,
+                    "importance": 0.5,
+                    "type_specific": None,
+                },
+                {
+                    "id": second_id,
+                    "node_type": "person",
+                    "name": "Second",
+                    "summary": None,
+                    "importance": 0.5,
+                    "type_specific": None,
+                },
+            ]
+        )
+        drafts = [
+            _MemoryDraft(
+                SurfaceAnchor("node", first_id, "first", 1.0),
+                True,
+                (first_id,),
+                frozenset({first_id}),
+                [],
+            ),
+            _MemoryDraft(
+                SurfaceAnchor("node", second_id, "second", 1.0),
+                False,
+                (second_id,),
+                frozenset({second_id}),
+                [],
+            ),
+        ]
+        ctx = SurfacingContext(workspace_id=uuid4(), now=datetime.now(UTC))
+
+        memories = await _materialize_drafts(conn, ctx, drafts)
+
+        self.assertEqual(len(conn.calls), 1)
+        self.assertEqual(
+            [item.nodes[0].title for item in memories if item],
+            ["First", "Second"],
+        )
 
 
 class BuiltInDiscoveryQueryTests(unittest.TestCase):
