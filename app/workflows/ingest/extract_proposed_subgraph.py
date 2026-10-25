@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Protocol
 
-from app.workflows.ingest.resolve_proposed_subgraph import merge_edge_details
+from app.graph.edge_helpers import combine_edge_details
 from app.workflows.ingest.types import (
     BoundaryContext,
     ChunkExtractionInput,
@@ -601,7 +601,7 @@ def _merge_chunk_subgraph(
         existing_edge = edges_by_id.get(incoming_edge.proposed_edge_id)
         if existing_edge is None:
             merged_graph.edges.append(deepcopy(incoming_edge))
-            merged_graph.edges[-1].details = merge_edge_details(
+            merged_graph.edges[-1].details = combine_edge_details(
                 None, incoming_edge.details
             )
             edges_by_id[incoming_edge.proposed_edge_id] = merged_graph.edges[-1]
@@ -616,7 +616,7 @@ def _merge_chunk_subgraph(
         )
 
         _append_unique(existing_edge.evidence, incoming_edge.evidence)
-        existing_edge.details = merge_edge_details(
+        existing_edge.details = combine_edge_details(
             existing_edge.details, incoming_edge.details
         )
 

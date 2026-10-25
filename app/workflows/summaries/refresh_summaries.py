@@ -13,11 +13,35 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 
 logger = logging.getLogger(__name__)
+
+
+def enqueue_summary_refresh(
+    conn: Any,
+    *,
+    workspace_id: UUID,
+    node_id: UUID,
+    incoming_summaries: list[str],
+) -> None:
+    """Append summaries to the node's pending refresh, creating it if needed."""
+
+    conn.execute(
+        """
+        INSERT INTO node_summary_refresh_queue (
+            workspace_id, node_id, incoming_summaries
+        )
+        VALUES (%s, %s, %s)
+        ON CONFLICT (workspace_id, node_id) WHERE status = 'pending'
+        DO UPDATE SET incoming_summaries =
+            node_summary_refresh_queue.incoming_summaries
+            || EXCLUDED.incoming_summaries
+        """,
+        (workspace_id, node_id, incoming_summaries),
+    )
 
 
 @dataclass(frozen=True, slots=True)

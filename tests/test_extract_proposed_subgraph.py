@@ -11,7 +11,7 @@ from app.workflows.ingest.extract_proposed_subgraph import (
     _merge_chunk_subgraph,
     extract_proposed_subgraph,
 )
-from app.workflows.ingest.resolve_proposed_subgraph import merge_edge_details
+from app.graph.edge_helpers import combine_edge_details
 from app.workflows.ingest.types import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
@@ -441,23 +441,23 @@ class ExtractProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
 
 
 class EdgeDetailsTests(unittest.TestCase):
-    def test_merge_edge_details_accumulates_without_repeats(self) -> None:
-        self.assertIsNone(merge_edge_details(None, None))
-        self.assertIsNone(merge_edge_details(None, "   "))
-        self.assertEqual(merge_edge_details(None, " usually  iced "), "usually iced")
-        self.assertEqual(merge_edge_details("usually iced", None), "usually iced")
+    def test_combine_edge_details_accumulates_without_repeats(self) -> None:
+        self.assertIsNone(combine_edge_details(None, None))
+        self.assertIsNone(combine_edge_details(None, "   "))
+        self.assertEqual(combine_edge_details(None, " usually  iced "), "usually iced")
+        self.assertEqual(combine_edge_details("usually iced", None), "usually iced")
         self.assertEqual(
-            merge_edge_details(
+            combine_edge_details(
                 "especially strawberry matcha lattes", "usually orders it iced"
             ),
             "especially strawberry matcha lattes; usually orders it iced",
         )
         self.assertEqual(
-            merge_edge_details("strawberry matcha lattes; iced", "Iced"),
+            combine_edge_details("strawberry matcha lattes; iced", "Iced"),
             "strawberry matcha lattes; iced",
         )
         self.assertEqual(
-            merge_edge_details("lattes", "especially strawberry lattes"),
+            combine_edge_details("lattes", "especially strawberry lattes"),
             "especially strawberry lattes",
         )
 

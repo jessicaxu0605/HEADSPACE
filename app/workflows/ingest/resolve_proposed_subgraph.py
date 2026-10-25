@@ -11,11 +11,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from math import prod
 import re
 from typing import Literal, Protocol, TypeAlias
 from uuid import UUID, uuid4
 
+from app.graph.edge_helpers import combine_edge_details, combine_probabilities
 from app.workflows.ingest.relation_types import (
     RelationDefinition,
     canonicalize_relation_type,
@@ -60,7 +60,6 @@ class ResolutionPolicy:
     medium_match_threshold: float = 0.65
     review_match_threshold: float = 0.50
     identifier_similarity_threshold: float = 0.65
-    merge_match_threshold: float = 0.96
     one_shared_neighbor_score: float = 0.75
     two_shared_neighbors_score: float = 0.95
     exclusive_replacement_threshold: float = 0.90
@@ -436,14 +435,6 @@ class UpdateCanonicalNodeTitle:
 
 
 @dataclass(frozen=True, slots=True)
-class MergeCanonicalNodes:
-    from_node_id: UUID
-    into_node_id: UUID
-    reason: str
-    kind: Literal["merge_nodes"] = "merge_nodes"
-
-
-@dataclass(frozen=True, slots=True)
 class FillCanonicalNodeTypeSpecific:
     """Add type-specific fields the canonical node does not have yet.
 
@@ -486,7 +477,6 @@ NodePlanAction: TypeAlias = (
     | CreateNodeIdentifier
     | CreateNodeExternalId
     | UpdateCanonicalNodeTitle
-    | MergeCanonicalNodes
     | FillCanonicalNodeTypeSpecific
     | FillCanonicalNodeSummary
     | QueueCanonicalNodeSummaryRefresh
@@ -527,7 +517,7 @@ class UpsertCanonicalEdge:
     previous_relation_type: str | None = None
     absorbed_relation_type: str | None = None
     # Incoming details from this source; persistence merges them into the locked
-    # edge row with merge_edge_details, like it does for confidence and strength.
+    # edge row with combine_edge_details, like it does for confidence and strength.
     details: str | None = None
     kind: Literal["upsert_edge"] = "upsert_edge"
 
@@ -553,32 +543,6 @@ class ResolutionTransactionPlan:
     node_actions: list[NodePlanAction]
     edge_actions: list[EdgePlanAction]
     repair_items: list[ResolveRepairItem]
-
-
-def combine_probabilities(values: list[float]) -> float:
-    """Combine independent supporting signals with diminishing returns."""
-
-    return 1.0 - prod(1.0 - value for value in values)
-
-
-def merge_edge_details(existing: str | None, incoming: str | None) -> str | None:
-    """Accumulate edge details across mentions without repeating known facts.
-
-    Details never affect edge identity, so a repeated relationship keeps one edge
-    whose details grow as new sources qualify it.
-    """
-
-    existing = " ".join(existing.split()) if existing else None
-    incoming = " ".join(incoming.split()) if incoming else None
-    if not incoming:
-        return existing or None
-    if not existing:
-        return incoming
-    if _normalize(incoming) in _normalize(existing):
-        return existing
-    if _normalize(existing) in _normalize(incoming):
-        return incoming
-    return f"{existing}; {incoming}"
 
 
 def evidence_confidence(evidence: list[ProposedEvidence]) -> float:
@@ -699,25 +663,6 @@ async def resolve_proposed_subgraph(
                     selected.match_score,
                 )
             )
-            for duplicate in _mergeable_candidates(selected, compatible, policy):
-                node_actions.append(
-                    MergeCanonicalNodes(
-                        from_node_id=duplicate.node.node_id,
-                        into_node_id=canonical_node.node_id,
-                        reason="high-confidence identity match",
-                    )
-                )
-                node_actions.append(
-                    CreateNodeIdentifier(canonical_node.node_id, duplicate.node.title)
-                )
-                if _is_email(duplicate.node.title):
-                    node_actions.append(
-                        CreateNodeExternalId(
-                            canonical_node.node_id,
-                            "email",
-                            _normalized_email(duplicate.node.title),
-                        )
-                    )
             if proposed_node.summary and not canonical_node.summary:
                 node_actions.append(
                     FillCanonicalNodeSummary(
@@ -1026,7 +971,7 @@ async def resolve_proposed_subgraph(
                 operation="update",
                 is_symmetric=relation_catalog[target.relation_type].is_symmetric,
                 absorbed_relation_type=relation.name,
-                details=merge_edge_details(None, proposed_edge.details),
+                details=combine_edge_details(None, proposed_edge.details),
             )
         else:
             if exact_edge is None and relation.is_exclusive:
@@ -1105,7 +1050,7 @@ async def resolve_proposed_subgraph(
                     if prior_edge is not None and exact_edge is None
                     else None
                 ),
-                details=merge_edge_details(None, proposed_edge.details),
+                details=combine_edge_details(None, proposed_edge.details),
             )
 
         edge_actions.append(action)
@@ -1388,20 +1333,6 @@ def _preferred_title(
     if _title_quality(proposed, node_type) > _title_quality(current, node_type):
         return proposed
     return current
-
-
-def _mergeable_candidates(
-    selected: NodeCandidate,
-    candidates: list[NodeCandidate],
-    policy: ResolutionPolicy,
-) -> list[NodeCandidate]:
-    return [
-        candidate
-        for candidate in candidates
-        if candidate.node.node_id != selected.node.node_id
-        and candidate.match_score >= policy.merge_match_threshold
-        and any("email local-part" in reason for reason in candidate.reasons)
-    ]
 
 
 def _identifier_actions(

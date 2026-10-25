@@ -10,7 +10,6 @@ from app.workflows.ingest.resolve_proposed_subgraph import (
     CanonicalNode,
     CreateNodeExternalId,
     CreateNodeIdentifier,
-    MergeCanonicalNodes,
     NodeCandidate,
     RelationType,
     SimpleCanonicalGraphResolverStore,
@@ -222,7 +221,7 @@ class ResolveProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-    async def test_merges_existing_email_duplicate_into_exact_named_person(self) -> None:
+    async def test_resolves_named_person_without_merging_email_duplicate(self) -> None:
         named = CanonicalNode(uuid4(), "person", "Andrew Xu")
         email = CanonicalNode(uuid4(), "person", "andr3w.xu@gmail.com")
         graph = ProposedGraph(
@@ -236,13 +235,8 @@ class ResolveProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             store=SimpleCanonicalGraphResolverStore(nodes=[named, email]),
         )
 
-        merges = [
-            action for action in plan.node_actions
-            if isinstance(action, MergeCanonicalNodes)
-        ]
-        self.assertEqual(len(merges), 1)
-        self.assertEqual(merges[0].from_node_id, email.node_id)
-        self.assertEqual(merges[0].into_node_id, named.node_id)
+        self.assertEqual(plan.node_bindings[0].outcome, "resolved")
+        self.assertEqual(plan.node_bindings[0].node_id, named.node_id)
 
     async def test_weak_candidate_creates_possible_duplicate_review(self) -> None:
         candidate = CanonicalNode(uuid4(), "person", "Alicia")

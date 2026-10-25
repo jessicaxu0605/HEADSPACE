@@ -10,6 +10,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
+from app.graph.edge_helpers import combine_edge_details, combine_probabilities
 from app.persistence.postgres.connection import get_connection
 from app.serialization import to_jsonable
 from app.storage import write_storage_object
@@ -30,13 +31,10 @@ from app.workflows.ingest.resolve_proposed_subgraph import (
     CreateNodeIdentifier,
     FillCanonicalNodeSummary,
     FillCanonicalNodeTypeSpecific,
-    MergeCanonicalNodes,
     QueueCanonicalNodeSummaryRefresh,
     ResolutionTransactionPlan,
     UpdateCanonicalNodeTitle,
     UpsertCanonicalEdge,
-    combine_probabilities,
-    merge_edge_details,
     resolve_proposed_subgraph,
 )
 from app.workflows.ingest.types import (
@@ -47,6 +45,7 @@ from app.workflows.ingest.types import (
     ProposedSubgraphExtractionResult,
     SourceType,
 )
+from app.workflows.summaries.refresh_summaries import enqueue_summary_refresh
 
 
 logger = logging.getLogger(__name__)
@@ -376,7 +375,6 @@ class _RunGraphChanges:
     """Nodes and edges whose change kind is more specific than 'updated'."""
 
     created_nodes: set[UUID] = field(default_factory=set)
-    merged_nodes: set[UUID] = field(default_factory=set)
     created_edges: set[UUID] = field(default_factory=set)
     archived_edges: set[UUID] = field(default_factory=set)
 
@@ -392,9 +390,7 @@ def _record_run_graph_changes(
 ) -> None:
     rows: list[tuple[str, UUID, str]] = []
     for node_id in affected_nodes:
-        if node_id in changes.merged_nodes:
-            kind = "merged"
-        elif node_id in changes.created_nodes:
+        if node_id in changes.created_nodes:
             kind = "created"
         else:
             kind = "updated"
@@ -466,38 +462,13 @@ def _enqueue_projection_rebuild(
     )
 
 
-def _enqueue_summary_refresh(
-    conn: Any,
-    *,
-    workspace_id: UUID,
-    node_id: UUID,
-    incoming_summaries: list[str],
-) -> None:
-    """Append summaries to the node's pending refresh, creating it if needed."""
-
-    conn.execute(
-        """
-        INSERT INTO node_summary_refresh_queue (
-            workspace_id, node_id, incoming_summaries
-        )
-        VALUES (%s, %s, %s)
-        ON CONFLICT (workspace_id, node_id) WHERE status = 'pending'
-        DO UPDATE SET incoming_summaries =
-            node_summary_refresh_queue.incoming_summaries
-            || EXCLUDED.incoming_summaries
-        """,
-        (workspace_id, node_id, incoming_summaries),
-    )
-
-
 def _apply_node_actions(
     conn: Any,
     plan: ResolutionTransactionPlan,
     changes: _RunGraphChanges,
-) -> tuple[dict[UUID, UUID], set[UUID], set[UUID]]:
+) -> tuple[dict[UUID, UUID], set[UUID]]:
     node_ids: dict[UUID, UUID] = {}
     affected_node_ids: set[UUID] = set()
-    affected_edge_ids: set[UUID] = set()
 
     for action in plan.node_actions:
         if not isinstance(action, CreateCanonicalNode):
@@ -563,26 +534,7 @@ def _apply_node_actions(
         affected_node_ids.add(row["id"])
 
     for action in plan.node_actions:
-        if not isinstance(action, MergeCanonicalNodes):
-            continue
-        from_node_id = _map_node_id(action.from_node_id, node_ids)
-        into_node_id = _map_node_id(action.into_node_id, node_ids)
-        affected_edge_ids.update(
-            _merge_canonical_nodes(
-                conn,
-                workspace_id=plan.workspace_id,
-                from_node_id=from_node_id,
-                into_node_id=into_node_id,
-                reason=action.reason,
-                changes=changes,
-            )
-        )
-        node_ids[from_node_id] = into_node_id
-        changes.merged_nodes.add(from_node_id)
-        affected_node_ids.update((from_node_id, into_node_id))
-
-    for action in plan.node_actions:
-        if isinstance(action, (CreateCanonicalNode, MergeCanonicalNodes)):
+        if isinstance(action, CreateCanonicalNode):
             continue
         node_id = _map_node_id(action.node_id, node_ids)
         _assert_active_node(
@@ -611,7 +563,7 @@ def _apply_node_actions(
                 (action.summary, plan.workspace_id, node_id),
             )
         elif isinstance(action, QueueCanonicalNodeSummaryRefresh):
-            _enqueue_summary_refresh(
+            enqueue_summary_refresh(
                 conn,
                 workspace_id=plan.workspace_id,
                 node_id=node_id,
@@ -676,291 +628,7 @@ def _apply_node_actions(
             raise TypeError(f"Unsupported node action: {type(action).__name__}")
         affected_node_ids.add(node_id)
 
-    return node_ids, affected_node_ids, affected_edge_ids
-
-
-def _merge_canonical_nodes(
-    conn: Any,
-    *,
-    workspace_id: UUID,
-    from_node_id: UUID,
-    into_node_id: UUID,
-    reason: str,
-    changes: _RunGraphChanges,
-) -> set[UUID]:
-    """Move durable identity and graph records, then retire the duplicate node."""
-
-    # The reason remains in the persisted ingestion transaction plan; the canonical
-    # node schema itself records only the redirect.
-    del reason
-    if from_node_id == into_node_id:
-        return set()
-    affected_edge_ids: set[UUID] = set()
-    rows = conn.execute(
-        """
-        SELECT id, node_type
-        FROM memory_node
-        WHERE workspace_id = %s
-          AND id IN (%s, %s)
-          AND deleted_at IS NULL
-          AND merged_into_node_id IS NULL
-        FOR UPDATE
-        """,
-        (workspace_id, from_node_id, into_node_id),
-    ).fetchall()
-    node_types = {row["id"]: row["node_type"] for row in rows}
-    if set(node_types) != {from_node_id, into_node_id}:
-        raise StaleTransactionPlanError(
-            "A node selected for merging is no longer active."
-        )
-    if node_types[from_node_id] != node_types[into_node_id]:
-        raise StaleTransactionPlanError(
-            "Canonical nodes of different types cannot be merged."
-        )
-
-    conn.execute(
-        """
-        UPDATE node_identifier AS source
-        SET deleted_at = now(), deleted_reason = 'merged_duplicate'
-        WHERE source.workspace_id = %s
-          AND source.node_id = %s
-          AND source.deleted_at IS NULL
-          AND EXISTS (
-              SELECT 1 FROM node_identifier AS target
-              WHERE target.workspace_id = source.workspace_id
-                AND target.node_id = %s
-                AND target.scope = source.scope
-                AND lower(target.identifier_text) = lower(source.identifier_text)
-                AND target.deleted_at IS NULL
-          )
-        """,
-        (workspace_id, from_node_id, into_node_id),
-    )
-    conn.execute(
-        """
-        UPDATE node_identifier
-        SET node_id = %s, updated_at = now()
-        WHERE workspace_id = %s AND node_id = %s AND deleted_at IS NULL
-        """,
-        (into_node_id, workspace_id, from_node_id),
-    )
-    conn.execute(
-        """
-        UPDATE node_external_id
-        SET node_id = %s
-        WHERE workspace_id = %s AND node_id = %s AND deleted_at IS NULL
-        """,
-        (into_node_id, workspace_id, from_node_id),
-    )
-    conn.execute(
-        """
-        DELETE FROM memory_evidence_annotation AS source
-        USING memory_evidence_annotation AS target
-        WHERE source.workspace_id = %s
-          AND source.node_id = %s
-          AND target.workspace_id = source.workspace_id
-          AND target.evidence_id = source.evidence_id
-          AND target."start" = source."start"
-          AND target.length = source.length
-          AND target.node_id = %s
-        """,
-        (workspace_id, from_node_id, into_node_id),
-    )
-    conn.execute(
-        """
-        UPDATE memory_evidence_annotation
-        SET node_id = %s
-        WHERE workspace_id = %s AND node_id = %s
-        """,
-        (into_node_id, workspace_id, from_node_id),
-    )
-
-    edges = conn.execute(
-        """
-        SELECT
-            edge.id,
-            edge.from_node_id,
-            edge.to_node_id,
-            edge.relation_type_id,
-            edge.confidence,
-            edge.strength,
-            edge.details,
-            relation.is_symmetric
-        FROM memory_edge AS edge
-        JOIN relation_type AS relation ON relation.id = edge.relation_type_id
-        WHERE edge.workspace_id = %s
-          AND edge.deleted_at IS NULL
-          AND (edge.from_node_id = %s OR edge.to_node_id = %s)
-        FOR UPDATE
-        """,
-        (workspace_id, from_node_id, from_node_id),
-    ).fetchall()
-    for edge in edges:
-        affected_edge_ids.add(edge["id"])
-        new_from = (
-            into_node_id
-            if edge["from_node_id"] == from_node_id
-            else edge["from_node_id"]
-        )
-        new_to = (
-            into_node_id
-            if edge["to_node_id"] == from_node_id
-            else edge["to_node_id"]
-        )
-        if edge["is_symmetric"] and str(new_from) > str(new_to):
-            new_from, new_to = new_to, new_from
-        if new_from == new_to:
-            conn.execute(
-                """
-                UPDATE memory_edge
-                SET deleted_at = now(), deleted_reason = 'merged_self_edge'
-                WHERE workspace_id = %s AND id = %s
-                """,
-                (workspace_id, edge["id"]),
-            )
-            changes.archived_edges.add(edge["id"])
-            continue
-        existing = conn.execute(
-            """
-            SELECT id, confidence, strength, details
-            FROM memory_edge
-            WHERE workspace_id = %s
-              AND from_node_id = %s
-              AND to_node_id = %s
-              AND relation_type_id = %s
-              AND deleted_at IS NULL
-              AND id <> %s
-            FOR UPDATE
-            """,
-            (workspace_id, new_from, new_to, edge["relation_type_id"], edge["id"]),
-        ).fetchone()
-        if existing is None:
-            conn.execute(
-                """
-                UPDATE memory_edge
-                SET from_node_id = %s, to_node_id = %s, updated_at = now()
-                WHERE workspace_id = %s AND id = %s
-                """,
-                (new_from, new_to, workspace_id, edge["id"]),
-            )
-            continue
-        affected_edge_ids.add(existing["id"])
-        conn.execute(
-            """
-            DELETE FROM memory_evidence AS source
-            USING memory_evidence AS target
-            WHERE source.workspace_id = %s
-              AND source.edge_id = %s
-              AND target.workspace_id = source.workspace_id
-              AND target.edge_id = %s
-              AND target.source_id = source.source_id
-              AND target.raw_content = source.raw_content
-            """,
-            (workspace_id, edge["id"], existing["id"]),
-        )
-        conn.execute(
-            """
-            UPDATE memory_evidence
-            SET edge_id = %s
-            WHERE workspace_id = %s AND edge_id = %s
-            """,
-            (existing["id"], workspace_id, edge["id"]),
-        )
-        conn.execute(
-            """
-            UPDATE memory_edge
-            SET confidence = 1 - ((1 - confidence) * (1 - %s)),
-                strength = 1 - ((1 - strength) * (1 - %s)),
-                details = %s,
-                updated_at = now()
-            WHERE workspace_id = %s AND id = %s
-            """,
-            (
-                edge["confidence"],
-                edge["strength"],
-                merge_edge_details(existing["details"], edge["details"]),
-                workspace_id,
-                existing["id"],
-            ),
-        )
-        conn.execute(
-            """
-            UPDATE memory_edge
-            SET deleted_at = now(), deleted_reason = 'merged_duplicate_edge'
-            WHERE workspace_id = %s AND id = %s
-            """,
-            (workspace_id, edge["id"]),
-        )
-        changes.archived_edges.add(edge["id"])
-
-    # Keep the duplicate's summary: use it when the surviving node has none,
-    # otherwise queue it to be merged, along with any refresh still pending.
-    summaries = conn.execute(
-        """
-        SELECT source.summary AS source_summary, target.summary AS target_summary
-        FROM memory_node AS source, memory_node AS target
-        WHERE source.workspace_id = %s AND source.id = %s
-          AND target.workspace_id = source.workspace_id AND target.id = %s
-        """,
-        (workspace_id, from_node_id, into_node_id),
-    ).fetchone()
-    pending_summaries = [
-        summary
-        for row in conn.execute(
-            """
-            DELETE FROM node_summary_refresh_queue
-            WHERE workspace_id = %s AND node_id = %s AND status = 'pending'
-            RETURNING incoming_summaries
-            """,
-            (workspace_id, from_node_id),
-        ).fetchall()
-        for summary in row["incoming_summaries"]
-    ]
-    source_summary = (summaries["source_summary"] or "").strip()
-    if source_summary and not (summaries["target_summary"] or "").strip():
-        conn.execute(
-            """
-            UPDATE memory_node SET summary = %s, updated_at = now()
-            WHERE workspace_id = %s AND id = %s
-            """,
-            (source_summary, workspace_id, into_node_id),
-        )
-    elif source_summary and source_summary != summaries["target_summary"].strip():
-        pending_summaries.insert(0, source_summary)
-    if pending_summaries:
-        _enqueue_summary_refresh(
-            conn,
-            workspace_id=workspace_id,
-            node_id=into_node_id,
-            incoming_summaries=pending_summaries,
-        )
-
-    # Fill the surviving node's missing type-specific fields from the duplicate.
-    conn.execute(
-        """
-        UPDATE memory_node AS target
-        SET type_specific = source.type_specific
-              || COALESCE(target.type_specific, '{}'::jsonb),
-            updated_at = now()
-        FROM memory_node AS source
-        WHERE target.workspace_id = %s
-          AND target.id = %s
-          AND source.workspace_id = target.workspace_id
-          AND source.id = %s
-          AND source.type_specific IS NOT NULL
-        """,
-        (workspace_id, into_node_id, from_node_id),
-    )
-    conn.execute(
-        """
-        UPDATE memory_node
-        SET merged_into_node_id = %s,
-            updated_at = now()
-        WHERE workspace_id = %s AND id = %s
-        """,
-        (into_node_id, workspace_id, from_node_id),
-    )
-    return affected_edge_ids
+    return node_ids, affected_node_ids
 
 
 def _get_relation_type(
@@ -1250,7 +918,7 @@ def _apply_edge_actions(
             [edge["confidence"], *confidence_values]
         )
         new_strength = combine_probabilities([edge["strength"], *strength_values])
-        new_details = merge_edge_details(edge["details"], action.details)
+        new_details = combine_edge_details(edge["details"], action.details)
         conn.execute(
             """
             UPDATE memory_edge
@@ -1493,14 +1161,13 @@ def apply_transaction_plan(
                 )
 
             changes = _RunGraphChanges()
-            node_ids, affected_nodes, merge_edges = _apply_node_actions(
+            node_ids, affected_nodes = _apply_node_actions(
                 conn, plan, changes
             )
             edge_nodes, affected_edges = _apply_edge_actions(
                 conn, plan, node_ids, changes
             )
             affected_nodes.update(edge_nodes)
-            affected_edges.update(merge_edges)
             _record_run_graph_changes(
                 conn,
                 run_id=run_id,
