@@ -6,6 +6,7 @@ import {
   type FormEvent,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import { createManualIngestion } from "../api";
 import { useWorkspace } from "../providers/WorkspaceProvider";
 import {
@@ -172,107 +173,109 @@ export default function TextEntryInterface({
   const starterPrompt = useRef(
     starterPrompts[Math.floor(Math.random() * starterPrompts.length)],
   ).current;
-  return (
-    <section
-      ref={sectionRef}
-      id="entry"
-      className={`entry${formHidden ? "" : " screen"}`}
-      aria-label="Add a thought"
-    >
-      {!formHidden && (
+  const notificationOverlay = (
+    <div className="notification-stack" aria-live="polite">
+      {notifications.map((notification) => (
         <PresenceTransition
           enter="fade-up"
+          enterDuration={motionDurations.page}
           exit="fade-up"
-          visible
+          exitDuration={motionDurations.standard}
+          key={notification.id}
+          onExited={() => removeNotification(notification.id)}
+          visible={!closingNotificationIds.has(notification.id)}
         >
-          <form className="ingestion-form" onSubmit={handleSubmit}>
-            <AutoGrowingTextArea
-              textareaRef={textareaRef}
-              value={content}
-              onValueChange={setContent}
-              ariaLabel="Your thought"
-              emptyPrompt={prompt ?? starterPrompt}
-              id="content"
-              name="content"
-              required
-            />
-            <PresenceTransition
-              enter="fade-up"
-              enterDelay={submitRevealDelayMs}
-              enterDuration={motionDurations.page}
-              exit="fade-up"
-              exitDuration={motionDurations.standard}
-              unmountOnExit={false}
-              visible={hasText}
-            >
-              <TextButton className="ingestion-submit" type="submit">
-                remember this&nbsp; →
-              </TextButton>
-            </PresenceTransition>
-          </form>
-        </PresenceTransition>
-      )}
-      <div className="notification-stack" aria-live="polite">
-        {notifications.map((notification) => (
-          <PresenceTransition
-            enter="fade-up"
-            enterDuration={motionDurations.page}
-            exit="fade-up"
-            exitDuration={motionDurations.standard}
-            key={notification.id}
-            onExited={() => removeNotification(notification.id)}
-            visible={!closingNotificationIds.has(notification.id)}
+          <BlurredContainer
+            blurredEdges={["top", "right", "bottom", "left"]}
+            edgeBlurSize={18}
+            className={`notification ${notification.state}`}
+            role={notification.state === "error" ? "alert" : "status"}
           >
-            <BlurredContainer
-              blurredEdges={["top", "right", "bottom", "left"]}
-              edgeBlurSize={18}
-              className={`notification ${notification.state}`}
-              role={notification.state === "error" ? "alert" : "status"}
+            <button
+              className="notification-dismiss"
+              type="button"
+              aria-label="Dismiss notification"
+              onClick={() => dismissNotification(notification.id)}
             >
-              <button
-                className="notification-dismiss"
-                type="button"
-                aria-label="Dismiss notification"
-                onClick={() => dismissNotification(notification.id)}
+              <span aria-hidden="true">×</span>
+            </button>
+            <p>
+              {notification.state === "pending"
+                ? "committing to memory..."
+                : notification.state === "success"
+                  ? "your memory is ready!"
+                  : notification.message}
+            </p>
+            {(notification.state === "error" ||
+              (notification.state === "success" && notification.runId)) && (
+              <div className="notification-actions">
+                {notification.state === "success" && notification.runId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const runId = notification.runId;
+                      dismissNotification(notification.id);
+                      if (runId) onViewRun(runId);
+                    }}
+                  >
+                    view
+                  </button>
+                )}
+                {notification.state === "error" && (
+                  <button
+                    type="button"
+                    onClick={() => retrySubmission(notification)}
+                  >
+                    retry
+                  </button>
+                )}
+              </div>
+            )}
+          </BlurredContainer>
+        </PresenceTransition>
+      ))}
+    </div>
+  );
+
+  return (
+    <>
+      <section
+        ref={sectionRef}
+        id="entry"
+        className={`entry${formHidden ? "" : " screen"}`}
+        aria-label="Add a thought"
+      >
+        {!formHidden && (
+          <PresenceTransition enter="fade-up" exit="fade-up" visible>
+            <form className="ingestion-form" onSubmit={handleSubmit}>
+              <AutoGrowingTextArea
+                textareaRef={textareaRef}
+                value={content}
+                onValueChange={setContent}
+                ariaLabel="Your thought"
+                emptyPrompt={prompt ?? starterPrompt}
+                id="content"
+                name="content"
+                required
+              />
+              <PresenceTransition
+                enter="fade-up"
+                enterDelay={submitRevealDelayMs}
+                enterDuration={motionDurations.page}
+                exit="fade-up"
+                exitDuration={motionDurations.standard}
+                unmountOnExit={false}
+                visible={hasText}
               >
-                <span aria-hidden="true">×</span>
-              </button>
-              <p>
-                {notification.state === "pending"
-                  ? "committing to memory..."
-                  : notification.state === "success"
-                    ? "your memory is ready!"
-                    : notification.message}
-              </p>
-              {(notification.state === "error" ||
-                (notification.state === "success" && notification.runId)) && (
-                <div className="notification-actions">
-                  {notification.state === "success" && notification.runId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const runId = notification.runId;
-                        dismissNotification(notification.id);
-                        if (runId) onViewRun(runId);
-                      }}
-                    >
-                      view
-                    </button>
-                  )}
-                  {notification.state === "error" && (
-                    <button
-                      type="button"
-                      onClick={() => retrySubmission(notification)}
-                    >
-                      retry
-                    </button>
-                  )}
-                </div>
-              )}
-            </BlurredContainer>
+                <TextButton className="ingestion-submit" type="submit">
+                  remember this&nbsp; →
+                </TextButton>
+              </PresenceTransition>
+            </form>
           </PresenceTransition>
-        ))}
-      </div>
-    </section>
+        )}
+      </section>
+      {createPortal(notificationOverlay, document.body)}
+    </>
   );
 }

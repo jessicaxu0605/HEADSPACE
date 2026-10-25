@@ -137,9 +137,6 @@ export default function ResultInterface({
   const isRunView = graphSelection.kind === "run";
   const nodesById = new Map(graph?.nodes.map((node) => [node.node_id, node]));
   const startNode = graph ? nodesById.get(graph.start_node_id) : undefined;
-  const connectedCount =
-    graph?.nodes.filter((node) => node.node_id !== graph.start_node_id)
-      .length ?? 0;
   const runNodeCount = graph?.nodes.length ?? 0;
 
   return (

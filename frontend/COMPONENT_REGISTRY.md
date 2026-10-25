@@ -190,7 +190,9 @@ arrived to fade it out over `motionDurations.loader`.
 Use it for every application loading state instead of creating another spinner.
 Pair it with `waitForBrainLoaderLeadIn` and `waitForBrainLoaderFade` from
 `src/loading.ts` when a feature needs to sequence content after the loader. It is
-not for short inline busy states such as the search icon pulse.
+positioned within the nearest page region, so persistent navigation and overlays
+remain outside its loading surface. It is not for short inline busy states such as
+the search icon pulse.
 
 ### Motion
 
@@ -267,7 +269,7 @@ of Headspace domain state and APIs.
 | `NeighborhoodGraph` | Force-directed canvas graph and its graph-specific interaction/measurement behavior. Its physics are not general UI motion. |
 | `NodeDetails` | Detailed presentation of a selected memory node. Extend for additional node metadata. |
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
-| `SessionMenu` | Fixed top-right bar on signed-in screens: optional page `actions` (`size="s"` `TextButton`s such as "search" and "add a memory") beside a hamburger menu with "all spaces" (when `onShowWorkspaces` is passed) and "log out". "← back" is not one of them: `App` pins it top left in `.page-back`, level with the toggle. Put further top-right page actions in `actions` and account-level actions in the menu rather than placing more fixed buttons. |
+| `SessionMenu` | Fixed top-right bar on signed-in screens, rendered in the document overlay layer so page transitions do not fade it: optional page `actions` (`size="s"` `TextButton`s such as "search" and "add a memory") beside a hamburger menu with "all spaces" (when `onShowWorkspaces` is passed) and "log out". "← back" is not one of them: `App` pins it top left in the same overlay layer via `.page-back`, level with the toggle. Put further top-right page actions in `actions` and account-level actions in the menu rather than placing more fixed buttons. |
 | `SurfacedMemories` | The memory feed that is the whole landing page: surfaced memories and upcoming items. |
 | `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes, and kept mounted on every signed-in page so submissions and notifications survive navigation; `formHidden` hides the form off the entry page. `prompt` replaces the random starter prompt (`WorkspaceWelcome` asks what the headspace is for). |
 | `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. A trailing outlined "+ new workspace" card swaps the page for `NewWorkspace`. |

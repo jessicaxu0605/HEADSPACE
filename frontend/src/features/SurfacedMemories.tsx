@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { getLandingMemories } from "../api";
 import {
+  BrainLoader,
   PresenceTransition,
   motionStaggers,
 } from "../component-library";
+import { waitForBrainLoaderFade, waitForBrainLoaderLeadIn } from "../loading";
 import type {
   MemoryLanding,
   MemoryLandingCard,
@@ -15,6 +17,8 @@ import { useWorkspace } from "../providers/WorkspaceProvider";
 type SurfacedMemoriesProps = {
   onOpenNode: (selection: MemoryNodeReference) => void;
 };
+
+type LoadPhase = "loading" | "fading" | "ready";
 
 // Anchors shown on recent loads are sent back as exclusions so each visit
 // surfaces something new. Upcoming items are a separate list and never excluded.
@@ -232,41 +236,72 @@ export default function SurfacedMemories({
   const { workspace } = useWorkspace();
   const [landing, setLanding] = useState<MemoryLanding | null>(null);
   const [failed, setFailed] = useState(false);
+  const [phase, setPhase] = useState<LoadPhase>("loading");
 
   useEffect(() => {
+    const loaderStartedAt = performance.now();
     const request = new AbortController();
     const recent = readRecentAnchors(workspace.id);
-    getLandingMemories(workspace.id, {
-      excludeNodeIds: recent.filter((a) => a.kind === "node").map((a) => a.id),
-      excludeEdgeIds: recent.filter((a) => a.kind === "edge").map((a) => a.id),
-      signal: request.signal,
-    })
-      .then((landing) => {
-        setLanding(landing);
-        rememberAnchors(workspace.id, landing.memories);
-      })
-      .catch((error: unknown) => {
+    setLanding(null);
+    setFailed(false);
+    setPhase("loading");
+
+    const load = async (): Promise<void> => {
+      try {
+        const payload = await getLandingMemories(workspace.id, {
+          excludeNodeIds: recent
+            .filter((anchor) => anchor.kind === "node")
+            .map((anchor) => anchor.id),
+          excludeEdgeIds: recent
+            .filter((anchor) => anchor.kind === "edge")
+            .map((anchor) => anchor.id),
+          signal: request.signal,
+        });
+        if (request.signal.aborted) return;
+        setLanding(payload);
+        rememberAnchors(workspace.id, payload.memories);
+      } catch (error: unknown) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setFailed(true);
         }
-      });
+      }
+      await waitForBrainLoaderLeadIn(loaderStartedAt);
+      if (request.signal.aborted) return;
+      setPhase("fading");
+      await waitForBrainLoaderFade();
+      if (request.signal.aborted) return;
+      setPhase("ready");
+    };
+
+    void load();
     return () => request.abort();
   }, [workspace.id]);
 
+  const ready = phase === "ready";
   const upcoming = landing?.upcoming ?? [];
   const memories = landing?.memories ?? [];
   const empty =
     landing !== null && upcoming.length === 0 && memories.length === 0;
 
   return (
-    <section className="surfaced-memories" aria-label="Surfaced memories">
+    <section
+      className="surfaced-memories"
+      aria-label="Surfaced memories"
+      aria-busy={!ready}
+    >
+      {!ready && (
+        <BrainLoader
+          fading={phase === "fading"}
+          label="Surfacing your memories…"
+        />
+      )}
       <div className="surfaced-memories-inner">
         <PresenceTransition
           as="p"
           className="surfaced-status"
           enter="fade-up"
           exit="fade-up"
-          visible={failed}
+          visible={ready && failed}
         >
           couldn’t surface any memories.
         </PresenceTransition>
@@ -275,11 +310,11 @@ export default function SurfacedMemories({
           className="surfaced-status"
           enter="fade-up"
           exit="fade-up"
-          visible={empty}
+          visible={ready && empty}
         >
           nothing to surface yet. add a memory to start.
         </PresenceTransition>
-        {landing !== null && !empty && (
+        {ready && landing !== null && !empty && (
           <div className="surfaced-memories-content">
             {upcoming.length > 0 && (
               <UpcomingCard items={upcoming} onOpenNode={onOpenNode} />

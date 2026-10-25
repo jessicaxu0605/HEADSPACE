@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { queryNodes, type NodeQueryMatch } from "./api";
 import AuthFlow from "./features/AuthFlow";
 import ResultInterface from "./features/ResultInterface";
@@ -245,30 +246,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
       : "← back";
 
   return (
-    <PageTransition
-      appear={false}
-      className="authenticated-page-transition"
-      pageKey={pageKey}
-      onSwitched={(transitionKey) => {
-        if (transitionKey === "entry") {
-          textareaRef.current?.focus({ preventScroll: true });
-          return;
-        }
-        if (transitionKey === "search" && !restoreResultsFocusRef.current) {
-          searchInputRef.current?.focus();
-          return;
-        }
-        if (transitionKey === "graph" || !restoreResultsFocusRef.current) {
-          return;
-        }
-        restoreResultsFocusRef.current = false;
-        (
-          selectedButtonRef.current ??
-          (transitionKey === "search" ? searchInputRef.current : null)
-        )?.focus();
-      }}
-    >
-      <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
+    <>
       <SessionMenu
         onLogout={onLogout}
         onShowWorkspaces={showAllWorkspaces}
@@ -304,76 +282,106 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
           )
         }
       />
-      {!showingWelcome && !isGraphPage && view !== "feed" && (
-        <div className="page-back">
-          <TextButton size="s" onClick={() => showView("feed")}>
-            ← back
-          </TextButton>
-        </div>
+      {createPortal(
+        !showingWelcome && !isGraphPage && view !== "feed" ? (
+          <div className="page-back">
+            <TextButton size="s" onClick={() => showView("feed")}>
+              ← back
+            </TextButton>
+          </div>
+        ) : null,
+        document.body,
       )}
-      {showingWelcome ? (
-        <WorkspaceWelcome
-          selfNodeId={newWorkspace?.selfNodeId ?? null}
-          onAddMemories={canWrite ? openEntry : undefined}
-        />
-      ) : isGraphPage || view === "search" ? (
-        <section className="landing screen" aria-labelledby="search-title">
-          <div className="search-wrap">
-            <h1 id="search-title" className="sr-only">
-              Search your headspace
-            </h1>
-            {!isGraphPage && (
-              <SearchInterface
-                inputRef={searchInputRef}
-                query={query}
-                searching={searching}
-                onQueryChange={handleQueryChange}
-                onSearch={() => void handleSearch()}
-              />
-            )}
-            <ResultInterface
-              backLabel={backLabel}
-              expandNotice={graphExplorer.expandNotice}
-              graph={graphExplorer.graph}
-              graphLoading={graphExplorer.loading}
-              graphSelection={graphExplorer.selection}
-              graphStatus={graphExplorer.status}
-              graphStatusIsError={graphExplorer.statusIsError}
-              expandNoticeIsError={graphExplorer.expandNoticeIsError}
-              matches={matches}
-              searchStatus={searchStatus}
-              searchStatusIsError={searchStatusIsError}
-              selectedButtonRef={selectedButtonRef}
-              selectedNodeIdRef={selectedNodeIdRef}
-              onBack={backFromGraph}
-              onExpandNode={(selection) => void graphExplorer.expand(selection)}
-              onOpenNode={openNode}
+      <PageTransition
+        appear={false}
+        className="authenticated-page-transition"
+        pageKey={pageKey}
+        onSwitched={(transitionKey) => {
+          if (transitionKey === "entry") {
+            textareaRef.current?.focus({ preventScroll: true });
+            return;
+          }
+          if (transitionKey === "search" && !restoreResultsFocusRef.current) {
+            searchInputRef.current?.focus();
+            return;
+          }
+          if (transitionKey === "graph" || !restoreResultsFocusRef.current) {
+            return;
+          }
+          restoreResultsFocusRef.current = false;
+          (
+            selectedButtonRef.current ??
+            (transitionKey === "search" ? searchInputRef.current : null)
+          )?.focus();
+        }}
+      >
+        <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
+          {showingWelcome ? (
+            <WorkspaceWelcome
+              selfNodeId={newWorkspace?.selfNodeId ?? null}
+              onAddMemories={canWrite ? openEntry : undefined}
             />
-          </div>
-        </section>
-      ) : view === "feed" ? (
-        <section className="landing screen" aria-labelledby="feed-title">
-          <div className="search-wrap">
-            <h1 id="feed-title" className="sr-only">
-              Your headspace
-            </h1>
-            <SurfacedMemories onOpenNode={openSurfacedMemory} />
-          </div>
-        </section>
-      ) : null}
+          ) : isGraphPage || view === "search" ? (
+            <section className="landing screen" aria-labelledby="search-title">
+              <div className="search-wrap">
+                <h1 id="search-title" className="sr-only">
+                  Search your headspace
+                </h1>
+                {!isGraphPage && (
+                  <SearchInterface
+                    inputRef={searchInputRef}
+                    query={query}
+                    searching={searching}
+                    onQueryChange={handleQueryChange}
+                    onSearch={() => void handleSearch()}
+                  />
+                )}
+                <ResultInterface
+                  backLabel={backLabel}
+                  expandNotice={graphExplorer.expandNotice}
+                  graph={graphExplorer.graph}
+                  graphLoading={graphExplorer.loading}
+                  graphSelection={graphExplorer.selection}
+                  graphStatus={graphExplorer.status}
+                  graphStatusIsError={graphExplorer.statusIsError}
+                  expandNoticeIsError={graphExplorer.expandNoticeIsError}
+                  matches={matches}
+                  searchStatus={searchStatus}
+                  searchStatusIsError={searchStatusIsError}
+                  selectedButtonRef={selectedButtonRef}
+                  selectedNodeIdRef={selectedNodeIdRef}
+                  onBack={backFromGraph}
+                  onExpandNode={(selection) =>
+                    void graphExplorer.expand(selection)
+                  }
+                  onOpenNode={openNode}
+                />
+              </div>
+            </section>
+          ) : view === "feed" ? (
+            <section className="landing screen" aria-labelledby="feed-title">
+              <div className="search-wrap">
+                <h1 id="feed-title" className="sr-only">
+                  Your headspace
+                </h1>
+                <SurfacedMemories onOpenNode={openSurfacedMemory} />
+              </div>
+            </section>
+          ) : null}
 
-      {/* Always mounted so pending submissions and their notifications
-          outlive the entry page. */}
-      {canWrite && (
-        <TextEntryInterface
-          sectionRef={entrySectionRef}
-          textareaRef={textareaRef}
-          formHidden={!showingWelcome && (isGraphPage || view !== "entry")}
-          prompt={showingWelcome ? "What’s this headspace for?" : undefined}
-          onViewRun={viewRun}
-        />
-      )}
-      </main>
-    </PageTransition>
+          {/* Always mounted so pending submissions and their notifications
+              outlive the entry page. */}
+          {canWrite && (
+            <TextEntryInterface
+              sectionRef={entrySectionRef}
+              textareaRef={textareaRef}
+              formHidden={!showingWelcome && (isGraphPage || view !== "entry")}
+              prompt={showingWelcome ? "What’s this headspace for?" : undefined}
+              onViewRun={viewRun}
+            />
+          )}
+        </main>
+      </PageTransition>
+    </>
   );
 }

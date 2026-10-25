@@ -1,11 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { Checkbox, TextButton, ValidatedTextField } from "../component-library";
-import SessionMenu from "./SessionMenu";
 
 type NewWorkspaceProps = {
   onCreate: (name: string, createSelfNode: boolean) => Promise<void>;
   onBack: () => void;
-  onLogout: () => void;
 };
 
 // A blank name only keeps "create" disabled; the field's warning is reserved
@@ -14,7 +12,7 @@ const noLocalWarning = (): string => "";
 
 // Names a new workspace. Creating it opens it, so this screen leaves with the
 // selection page on success.
-export default function NewWorkspace({ onCreate, onBack, onLogout }: NewWorkspaceProps) {
+export default function NewWorkspace({ onCreate, onBack }: NewWorkspaceProps) {
   const [name, setName] = useState("");
   const [createSelfNode, setCreateSelfNode] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -37,8 +35,10 @@ export default function NewWorkspace({ onCreate, onBack, onLogout }: NewWorkspac
 
   return (
     <main className="auth-shell">
-      <SessionMenu onLogout={onLogout} onShowWorkspaces={onBack} />
-      <section className="auth-card auth-signup" aria-labelledby="new-workspace-title">
+      <section
+        className="auth-card auth-signup"
+        aria-labelledby="new-workspace-title"
+      >
         <h1 id="new-workspace-title">A new headspace</h1>
         <form
           className="auth-signup-form"

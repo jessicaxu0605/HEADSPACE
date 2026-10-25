@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   BlurredContainer,
   FadeTransition,
@@ -48,7 +49,7 @@ export default function SessionMenu({
     action();
   };
 
-  return (
+  return createPortal(
     <div className="session-menu" ref={rootRef}>
       <div className="session-menu-bar">
         {actions}
@@ -83,6 +84,7 @@ export default function SessionMenu({
           </TextButton>
         </BlurredContainer>
       </FadeTransition>
-    </div>
+    </div>,
+    document.body,
   );
 }
