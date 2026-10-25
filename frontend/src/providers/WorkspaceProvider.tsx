@@ -17,11 +17,16 @@ import {
 } from "../api";
 import { useSession } from "./SessionProvider";
 
+// Set only while the user is in the workspace they just created, so the app
+// can open on its first graph instead of the landing page.
+export type NewWorkspace = { selfNodeId: string | null };
+
 export type ActiveWorkspace = {
   workspace: Workspace;
   workspaces: Workspace[];
   role: WorkspaceRole;
   canWrite: boolean;
+  newWorkspace: NewWorkspace | null;
   switchWorkspace: (workspaceId: string) => void;
   showAllWorkspaces: () => void;
 };
@@ -43,6 +48,7 @@ type LoadedWorkspaces = {
   userId: string;
   workspaces: Workspace[];
   activeId: string | null;
+  created?: NewWorkspace & { workspaceId: string };
 };
 
 const WorkspaceContext = createContext<WorkspaceState | null>(null);
@@ -126,7 +132,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ) {
         return;
       }
-      setLoaded({ ...loaded, activeId: workspaceId });
+      setLoaded({ ...loaded, activeId: workspaceId, created: undefined });
       // Opening the workspace does not wait on this; if it fails, the next
       // visit just falls back to the previous choice or the selection page.
       void markWorkspaceLastUsed(workspaceId).catch(() => undefined);
@@ -139,13 +145,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const createWorkspace = useCallback(
     async (name: string, createSelfNode: boolean): Promise<void> => {
       if (userId === null) return;
-      const { workspace } = await requestCreateWorkspace(name, { createSelfNode });
+      const { workspace, self_node_id } = await requestCreateWorkspace(name, {
+        createSelfNode,
+      });
       setLoaded((current) =>
         current?.userId === userId
           ? {
               ...current,
               workspaces: [...current.workspaces, workspace],
               activeId: workspace.id,
+              created: { workspaceId: workspace.id, selfNodeId: self_node_id },
             }
           : current,
       );
@@ -158,7 +167,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // workspace is untouched, so a reload still reopens it.
   const showAllWorkspaces = useCallback((): void => {
     setLoaded((current) =>
-      current?.userId === userId ? { ...current, activeId: null } : current,
+      current?.userId === userId
+        ? { ...current, activeId: null, created: undefined }
+        : current,
     );
   }, [userId]);
 
@@ -183,6 +194,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         workspaces: loaded.workspaces,
         role: workspace.role,
         canWrite: workspace.role === "owner" || workspace.role === "editor",
+        newWorkspace:
+          loaded.created?.workspaceId === workspace.id
+            ? { selfNodeId: loaded.created.selfNodeId }
+            : null,
         switchWorkspace,
         showAllWorkspaces,
       };

@@ -7,6 +7,7 @@ import SessionMenu from "./features/SessionMenu";
 import SurfacedMemories from "./features/SurfacedMemories";
 import TextEntryInterface from "./features/TextEntryInterface";
 import WorkspaceSelection from "./features/WorkspaceSelection";
+import WorkspaceWelcome from "./features/WorkspaceWelcome";
 import WorkspaceUnavailable from "./features/WorkspaceUnavailable";
 import { BrainLoader, PageTransition, TextButton } from "./component-library";
 import useNeighborhoodExplorer from "./hooks/useNeighborhoodExplorer";
@@ -102,8 +103,11 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   const selectedButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedNodeIdRef = useRef<string | null>(null);
   const restoreResultsFocusRef = useRef(false);
-  const { workspace, canWrite, showAllWorkspaces } = useWorkspace();
+  const { workspace, canWrite, showAllWorkspaces, newWorkspace } = useWorkspace();
   const graphExplorer = useNeighborhoodExplorer();
+  // A just-created workspace opens on its welcome page until the reader views
+  // what they add; it is never shown again after that.
+  const [showingWelcome, setShowingWelcome] = useState(newWorkspace !== null);
 
   useEffect(
     () => () => {
@@ -208,10 +212,11 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
     selectedButtonRef.current = null;
     // The graph page hides the entry section, so jump rather than animate.
     window.scrollTo({ top: 0 });
+    setShowingWelcome(false);
     void graphExplorer.openRun(runId);
   };
 
-  const isGraphPage = graphExplorer.selection !== null;
+  const isGraphPage = !showingWelcome && graphExplorer.selection !== null;
   const hideContinueButton =
     (query.length > 0 && searchFocused) || matches.length > 0;
   const hideSurfacedMemories =
@@ -221,7 +226,7 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
     <PageTransition
       appear={false}
       className="authenticated-page-transition"
-      pageKey={isGraphPage ? "graph" : "landing"}
+      pageKey={showingWelcome ? "welcome" : isGraphPage ? "graph" : "landing"}
       onSwitched={(transitionKey) => {
         if (transitionKey !== "landing" || !restoreResultsFocusRef.current) {
           return;
@@ -238,6 +243,12 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
     >
       <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
       <SessionMenu onLogout={onLogout} onShowWorkspaces={showAllWorkspaces} />
+      {showingWelcome ? (
+        <WorkspaceWelcome
+          selfNodeId={newWorkspace?.selfNodeId ?? null}
+          onAddMemories={canWrite ? openEntry : undefined}
+        />
+      ) : (
       <section className="landing screen" aria-labelledby="search-title">
         <div className="search-wrap">
           <h1 id="search-title" className="sr-only">
@@ -291,11 +302,13 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
           </div>
         )}
       </section>
+      )}
 
       {canWrite && (
         <TextEntryInterface
           sectionRef={entrySectionRef}
           textareaRef={textareaRef}
+          prompt={showingWelcome ? "What’s this headspace for?" : undefined}
           onViewRun={viewRun}
         />
       )}

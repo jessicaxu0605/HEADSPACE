@@ -19,6 +19,8 @@ import {
 type TextEntryInterfaceProps = {
   sectionRef: RefObject<HTMLElement | null>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
+  // Replaces the random starter prompt, e.g. to ask for a new workspace's context.
+  prompt?: string;
   onViewRun: (runId: string) => void;
 };
 
@@ -59,6 +61,7 @@ const newRequestId = (): string => {
 export default function TextEntryInterface({
   sectionRef,
   textareaRef,
+  prompt,
   onViewRun,
 }: TextEntryInterfaceProps) {
   const { workspace } = useWorkspace();
@@ -183,7 +186,7 @@ export default function TextEntryInterface({
             value={content}
             onValueChange={setContent}
             ariaLabel="Your thought"
-            emptyPrompt={starterPrompt}
+            emptyPrompt={prompt ?? starterPrompt}
             id="content"
             name="content"
             required

@@ -263,9 +263,10 @@ of Headspace domain state and APIs.
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
 | `SessionMenu` | Fixed top-right hamburger menu on signed-in screens with "all workspaces" (when `onShowWorkspaces` is passed) and "log out". Add further account-level actions here rather than placing more fixed buttons. |
 | `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
-| `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. |
+| `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. `prompt` replaces the random starter prompt (`WorkspaceWelcome` asks what the headspace is for). |
 | `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. A trailing outlined "+ new workspace" card swaps the page for `NewWorkspace`. |
-| `NewWorkspace` | Full screen for naming a new workspace, with a `Checkbox` for adding the user's self node. Submitting calls `createWorkspace`, which creates and opens it; "← back" returns to `WorkspaceSelection`. Reuses the auth screens' layout classes. |
+| `NewWorkspace` | Full screen for naming a new workspace, with a `Checkbox` for adding the user's self node. Submitting calls `createWorkspace`, which creates and opens it on `WorkspaceWelcome`; "← back" returns to `WorkspaceSelection`. Reuses the auth screens' layout classes. |
+| `WorkspaceWelcome` | First page of a just-created workspace, shown by `App` in place of the landing page: the workspace's graph (the user's self node, or nothing), its name, and "add some memories ↓", which scrolls to `TextEntryInterface` below. Viewing a submitted memory leaves it for good. Separate from the explore graph page in `ResultInterface`. |
 | `WorkspaceUnavailable` | Signed-in screen for an account whose workspaces failed to load or that has no active membership. |
 
 Small render helpers that are private to one feature, such as memory cards inside
@@ -280,7 +281,7 @@ nests `SessionProvider` > `WorkspaceProvider` and picks one screen from their st
 | --- | --- |
 | `SessionProvider` / `useSession()` | Whether this browser is signed in: `checking`, `signed-out`, or `signed-in` with the `user`, plus `signIn(loginResponse)` and `signOut()`. The access token in `api.ts` is the source of truth (read with `useSyncExternalStore`); `api.ts` clears it on a 401, which signs the reader out everywhere. Do not store tokens or session flags elsewhere. |
 | `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then the server's `last_used_workspace_id`, which signup sets to the default workspace); otherwise it reports `selecting` (with `createWorkspace`) so `App` shows `WorkspaceSelection`. `switchWorkspace` records the choice with `markWorkspaceLastUsed`. Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
-| `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, `switchWorkspace`, and `showAllWorkspaces` (clears the active choice to return to `WorkspaceSelection` without changing the server's last-used workspace), for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
+| `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, `newWorkspace` (`{ selfNodeId }` only while in the workspace the user just created; `App` opens `WorkspaceWelcome` from it), `switchWorkspace`, and `showAllWorkspaces` (clears the active choice to return to `WorkspaceSelection` without changing the server's last-used workspace), for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
 
 The signed-in app is keyed by workspace id, so switching workspace remounts it and
 discards in-flight requests and per-workspace UI state. `ActiveWorkspaceProvider`
