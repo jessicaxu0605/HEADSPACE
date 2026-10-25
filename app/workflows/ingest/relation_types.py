@@ -127,16 +127,92 @@ def canonicalize_relation_type(
     return None
 
 
+def allows_endpoints(
+    definition: RelationDefinition,
+    from_type: str,
+    to_type: str,
+) -> bool:
+    """Return whether the canonical direction accepts these endpoint types."""
+
+    return (
+        not definition.allowed_from_types or from_type in definition.allowed_from_types
+    ) and (not definition.allowed_to_types or to_type in definition.allowed_to_types)
+
+
+def has_endpoint_restrictions(definition: RelationDefinition) -> bool:
+    return bool(definition.allowed_from_types or definition.allowed_to_types)
+
+
+def valid_relation_labels(
+    definitions: list[RelationDefinition] | tuple[RelationDefinition, ...],
+    from_type: str,
+    to_type: str,
+) -> tuple[str, ...]:
+    """Return every extractable label (canonical or inverse) valid for from -> to."""
+
+    labels: list[str] = []
+    for item in definitions:
+        if not item.is_extractable:
+            continue
+        if allows_endpoints(item, from_type, to_type):
+            labels.append(item.name)
+        if not item.is_symmetric and allows_endpoints(item, to_type, from_type):
+            labels.append(item.inverse_name)
+    return tuple(dict.fromkeys(labels))
+
+
+def repair_relation_endpoints(
+    relation: RelationDefinition,
+    definitions: list[RelationDefinition] | tuple[RelationDefinition, ...],
+    from_type: str,
+    to_type: str,
+) -> tuple[RelationDefinition, bool] | None:
+    """Find a replacement for a relation whose endpoints do not fit.
+
+    Returns the relation to use and whether endpoints must be reversed. Tries the
+    same relation reversed first, then the single type-restricted relation that
+    fits these endpoint types. Unrestricted relations fit everything, so they are
+    not counted; more than one restricted fit is too ambiguous to pick from.
+    """
+
+    if not relation.is_symmetric and allows_endpoints(relation, to_type, from_type):
+        return relation, True
+
+    fits: list[tuple[RelationDefinition, bool]] = []
+    for item in definitions:
+        if not item.is_extractable or not has_endpoint_restrictions(item):
+            continue
+        if allows_endpoints(item, from_type, to_type):
+            fits.append((item, False))
+        elif not item.is_symmetric and allows_endpoints(item, to_type, from_type):
+            fits.append((item, True))
+    return fits[0] if len(fits) == 1 else None
+
+
+def _endpoint_label(types: tuple[NodeType, ...]) -> str:
+    return "|".join(types) if types else "any"
+
+
 def relation_catalog_prompt(
     definitions: list[RelationDefinition] | tuple[RelationDefinition, ...],
 ) -> str:
     lines = [
-        "Allowed relation types (canonical / inverse). A relation type is the "
-        "edge's structured identity; put finer meaning in the edge's details:"
+        "Allowed relation types, as canonical (from -> to) / inverse (from -> to). "
+        "A relation type is the edge's structured identity; put finer meaning in "
+        "the edge's details. A label may only connect the node types shown for "
+        "it; \"any\" accepts every node type:"
     ]
-    lines.extend(
-        f"- {item.name} / {item.inverse_name}: {item.description}"
-        for item in definitions
-        if item.is_extractable
-    )
+    for item in definitions:
+        if not item.is_extractable:
+            continue
+        from_label = _endpoint_label(item.allowed_from_types)
+        to_label = _endpoint_label(item.allowed_to_types)
+        if item.is_symmetric:
+            signature = f"{item.name} ({from_label} <-> {to_label})"
+        else:
+            signature = (
+                f"{item.name} ({from_label} -> {to_label}) / "
+                f"{item.inverse_name} ({to_label} -> {from_label})"
+            )
+        lines.append(f"- {signature}: {item.description}")
     return "\n".join(lines)

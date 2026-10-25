@@ -877,5 +877,91 @@ class RelationHierarchyResolutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(upserts[2].absorbed_relation_type, "knows")
 
 
+class RelationEndpointRepairTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.event_id = uuid4()
+        self.date_id = uuid4()
+        self.store = FakeResolverStore(
+            candidates={
+                "party": [
+                    NodeCandidate(
+                        CanonicalNode(self.event_id, "event", "Party"),
+                        "normalized_title",
+                        1.0,
+                    )
+                ],
+                "may3": [
+                    NodeCandidate(
+                        CanonicalNode(self.date_id, "date", "May 3"),
+                        "normalized_title",
+                        1.0,
+                    )
+                ],
+            },
+            relations={
+                "occurs_on": RelationType(
+                    "occurs_on",
+                    "occurrence_date_of",
+                    "Event date.",
+                    allowed_from_types=("event",),
+                    allowed_to_types=("date",),
+                ),
+                "scheduled_for": RelationType(
+                    "scheduled_for",
+                    "scheduled_date_of",
+                    "Task date.",
+                    allowed_from_types=("task",),
+                    allowed_to_types=("date",),
+                ),
+            },
+        )
+
+    async def resolve(self, from_id: str, to_id: str, relation_type: str):
+        graph = ProposedGraph(
+            nodes=[
+                ProposedNode("party", "event", ["Party"], "Party"),
+                ProposedNode("may3", "date", ["May 3"], "May 3"),
+            ],
+            edges=[
+                ProposedEdge(
+                    "e1",
+                    from_id,
+                    to_id,
+                    relation_type,
+                    [ProposedEvidence("The party is on May 3.", 0.9)],
+                )
+            ],
+        )
+        return await resolve_proposed_subgraph(
+            workspace_id=uuid4(),
+            source_id=uuid4(),
+            proposed_graph=graph,
+            store=self.store,
+        )
+
+    async def test_wrong_relation_is_replaced_by_the_single_fitting_one(self) -> None:
+        plan = await self.resolve("party", "may3", "scheduled_for")
+
+        edge = plan.edge_actions[0]
+        self.assertEqual(edge.relation_type, "occurs_on")
+        self.assertEqual(
+            (edge.from_node_id, edge.to_node_id), (self.event_id, self.date_id)
+        )
+        self.assertEqual(
+            [item.item_type for item in plan.repair_items],
+            ["repaired_relation_endpoints"],
+        )
+        self.assertEqual(plan.repair_items[0].severity, "low")
+
+    async def test_backwards_relation_is_reversed(self) -> None:
+        plan = await self.resolve("may3", "party", "occurs_on")
+
+        edge = plan.edge_actions[0]
+        self.assertEqual(edge.relation_type, "occurs_on")
+        self.assertEqual(
+            (edge.from_node_id, edge.to_node_id), (self.event_id, self.date_id)
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

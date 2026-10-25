@@ -12,6 +12,7 @@ from app.workflows.ingest.extract_proposed_subgraph import (
     extract_proposed_subgraph,
 )
 from app.graph.edge_helpers import combine_edge_details
+from app.workflows.ingest.relation_types import RelationDefinition
 from app.workflows.ingest.types import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
@@ -500,6 +501,101 @@ class EdgeDetailsTests(unittest.TestCase):
         )
         self.assertEqual(len(merged.edges[0].evidence), 2)
         self.assertEqual(first.edges[0].details, "especially strawberry matcha lattes")
+
+
+OCCURS_ON = RelationDefinition(
+    "occurs_on",
+    "occurrence_date_of",
+    "Event date.",
+    allowed_from_types=("event",),
+    allowed_to_types=("date",),
+)
+SCHEDULED_FOR = RelationDefinition(
+    "scheduled_for",
+    "scheduled_date_of",
+    "Task date.",
+    allowed_from_types=("task",),
+    allowed_to_types=("date",),
+)
+
+
+class RelationEndpointValidationTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self.source_id = uuid4()
+
+    def prepared(self) -> PreparedSource:
+        return PreparedSource(
+            source_context=ExtractionSourceContext(
+                self.source_id, "manual_entry", {}
+            ),
+            chunks=chunk_stream(
+                SourceChunk("c1", self.source_id, "The party is on May 3.")
+            ),
+        )
+
+    def output(self, relation_type: str) -> ChunkExtractionOutput:
+        return ChunkExtractionOutput(
+            chunk_subgraph=ProposedGraph(
+                nodes=[
+                    ProposedNode("party", "event", ["Party"], "Party"),
+                    ProposedNode("may3", "date", ["May 3"], "May 3"),
+                ],
+                edges=[
+                    ProposedEdge(
+                        "e1",
+                        "party",
+                        "may3",
+                        relation_type,
+                        [ProposedEvidence("The party is on May 3.", 0.9)],
+                    )
+                ],
+            ),
+            updated_extraction_context=ExtractionContext("A party."),
+        )
+
+    async def test_requests_repair_listing_valid_relations(self) -> None:
+        llm = RecordingLLM([self.output("scheduled_for"), self.output("occurs_on")])
+
+        result = await extract_proposed_subgraph(
+            self.prepared(),
+            llm,
+            relation_definitions=[OCCURS_ON, SCHEDULED_FOR],
+        )
+
+        self.assertEqual(result.proposed_graph.edges[0].relation_type, "occurs_on")
+        issues = llm.repair_contexts[1].issues
+        self.assertEqual([issue.code for issue in issues], ["invalid_relation_endpoints"])
+        self.assertEqual(issues[0].path, "chunk_subgraph.edges[0].relation_type")
+        self.assertIn("event -> date: occurs_on", issues[0].message)
+
+    async def test_accepts_endpoint_mismatch_after_repair_budget(self) -> None:
+        bad = self.output("scheduled_for")
+        llm = RecordingLLM([bad, bad, bad])
+
+        result = await extract_proposed_subgraph(
+            self.prepared(),
+            llm,
+            relation_definitions=[OCCURS_ON, SCHEDULED_FOR],
+        )
+
+        self.assertEqual(len(llm.calls), 3)
+        self.assertEqual(
+            result.proposed_graph.edges[0].relation_type, "scheduled_for"
+        )
+
+    async def test_inverse_label_is_checked_in_canonical_direction(self) -> None:
+        output = self.output("occurrence_date_of")
+        edge = output.chunk_subgraph.edges[0]
+        edge.from_proposed_node_id, edge.to_proposed_node_id = "may3", "party"
+        llm = RecordingLLM([output])
+
+        await extract_proposed_subgraph(
+            self.prepared(),
+            llm,
+            relation_definitions=[OCCURS_ON, SCHEDULED_FOR],
+        )
+
+        self.assertEqual(len(llm.calls), 1)
 
 
 if __name__ == "__main__":

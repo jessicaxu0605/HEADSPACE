@@ -9,6 +9,12 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from app.graph.edge_helpers import combine_edge_details
+from app.workflows.ingest.relation_types import (
+    RelationDefinition,
+    allows_endpoints,
+    canonicalize_relation_type,
+    valid_relation_labels,
+)
 from app.workflows.ingest.types import (
     BoundaryContext,
     ChunkExtractionInput,
@@ -30,6 +36,11 @@ from app.workflows.ingest.types import (
 
 
 VALID_NODE_TYPES = set(NODE_TYPES)
+
+# Issues worth a repair attempt but not worth failing the ingest over: if they
+# survive the last attempt, the output is accepted and resolution repairs or
+# downgrades the affected edges.
+SOFT_ISSUE_CODES = {"invalid_relation_endpoints"}
 
 
 class ChunkExtractionLLM(Protocol):
@@ -141,6 +152,7 @@ async def extract_proposed_subgraph(
     llm: ChunkExtractionLLM,
     *,
     previous_ingest_context: PreviousIngestContext | None = None,
+    relation_definitions: list[RelationDefinition] | None = None,
     limits: ProposedSubgraphLimits = ProposedSubgraphLimits(),
     boundary_chars: int = 500,
     max_repair_attempts: int = 2,
@@ -179,9 +191,13 @@ async def extract_proposed_subgraph(
             issues = _collect_chunk_subgraph_issues(
                 output.chunk_subgraph,
                 accumulated_graph=proposed_graph,
+                relation_definitions=relation_definitions or [],
+            )
+            only_soft_issues_left = attempt == max_repair_attempts and all(
+                issue.code in SOFT_ISSUE_CODES for issue in issues
             )
 
-            if not issues:
+            if not issues or only_soft_issues_left:
                 candidate_graph = _merge_chunk_subgraph(
                     proposed_graph,
                     output.chunk_subgraph,
@@ -297,6 +313,7 @@ def _collect_chunk_subgraph_issues(
     chunk_subgraph: ProposedGraph,
     *,
     accumulated_graph: ProposedGraph,
+    relation_definitions: list[RelationDefinition] | None = None,
 ) -> list[ExtractionValidationIssue]:
     issues: list[ExtractionValidationIssue] = []
     node_ids = [node.proposed_node_id for node in chunk_subgraph.nodes]
@@ -326,6 +343,10 @@ def _collect_chunk_subgraph_issues(
         edge.proposed_edge_id: edge for edge in accumulated_graph.edges
     }
     known_node_ids = set(accumulated_nodes) | set(node_ids)
+    node_types = {
+        **{node_id: node.node_type for node_id, node in accumulated_nodes.items()},
+        **{node.proposed_node_id: node.node_type for node in chunk_subgraph.nodes},
+    }
 
     for node_index, node in enumerate(chunk_subgraph.nodes):
         node_path = f"chunk_subgraph.nodes[{node_index}]"
@@ -432,6 +453,17 @@ def _collect_chunk_subgraph_issues(
                     f"Edge {edge.proposed_edge_id!r} refers to a missing proposed node.",
                 )
             )
+        else:
+            endpoint_issue = _relation_endpoint_issue(
+                edge.proposed_edge_id,
+                edge.relation_type,
+                node_types[edge.from_proposed_node_id],
+                node_types[edge.to_proposed_node_id],
+                relation_definitions or [],
+                path=f"{edge_path}.relation_type",
+            )
+            if endpoint_issue is not None:
+                issues.append(endpoint_issue)
         existing_edge = accumulated_edges.get(edge.proposed_edge_id)
         if existing_edge is not None and (
             existing_edge.from_proposed_node_id != edge.from_proposed_node_id
@@ -509,6 +541,36 @@ def _collect_chunk_subgraph_issues(
                     )
 
     return issues
+
+
+def _relation_endpoint_issue(
+    edge_id: str,
+    relation_type: str,
+    from_type: str,
+    to_type: str,
+    relation_definitions: list[RelationDefinition],
+    *,
+    path: str,
+) -> ExtractionValidationIssue | None:
+    """Flag a catalog label used between node types it does not allow."""
+
+    resolution = canonicalize_relation_type(relation_type, relation_definitions)
+    if resolution is None:
+        return None
+    relation, reverse = resolution
+    canonical_from, canonical_to = (
+        (to_type, from_type) if reverse else (from_type, to_type)
+    )
+    if allows_endpoints(relation, canonical_from, canonical_to):
+        return None
+    options = ", ".join(valid_relation_labels(relation_definitions, from_type, to_type))
+    return _issue(
+        "invalid_relation_endpoints",
+        path,
+        f"Edge {edge_id!r} uses {relation_type!r}, which cannot connect "
+        f"{from_type} -> {to_type}. Choose the most specific relation that is "
+        f"valid for {from_type} -> {to_type}: {options}.",
+    )
 
 
 def _collect_nonempty_issue(

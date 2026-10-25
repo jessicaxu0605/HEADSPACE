@@ -5,6 +5,9 @@ import unittest
 from app.workflows.ingest.relation_types import (
     RelationDefinition,
     is_more_specific_relation,
+    relation_catalog_prompt,
+    repair_relation_endpoints,
+    valid_relation_labels,
     validate_relation_definitions,
 )
 
@@ -104,6 +107,89 @@ class RelationTypeHierarchyTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "contains a cycle"):
             validate_relation_definitions(definitions)
+
+
+ENDPOINT_DEFINITIONS = [
+    RelationDefinition("related_to", "related_to", "Fallback.", is_symmetric=True),
+    RelationDefinition(
+        "occurs_on",
+        "occurrence_date_of",
+        "Event date.",
+        allowed_from_types=("event",),
+        allowed_to_types=("date",),
+    ),
+    RelationDefinition(
+        "scheduled_for",
+        "scheduled_date_of",
+        "Task date.",
+        allowed_from_types=("task",),
+        allowed_to_types=("date",),
+    ),
+    RelationDefinition(
+        "lives_in",
+        "residence_of",
+        "Home.",
+        allowed_from_types=("person",),
+        allowed_to_types=("location",),
+    ),
+    RelationDefinition(
+        "visited",
+        "visited_by",
+        "Visit.",
+        allowed_from_types=("person",),
+        allowed_to_types=("location",),
+    ),
+    RelationDefinition(
+        "knows",
+        "knows",
+        "Acquaintance.",
+        is_symmetric=True,
+        allowed_from_types=("person",),
+        allowed_to_types=("person",),
+    ),
+]
+
+
+class RelationEndpointTests(unittest.TestCase):
+    def definition(self, name: str) -> RelationDefinition:
+        return next(item for item in ENDPOINT_DEFINITIONS if item.name == name)
+
+    def test_catalog_prompt_shows_endpoint_types_for_both_directions(self) -> None:
+        prompt = relation_catalog_prompt(ENDPOINT_DEFINITIONS)
+
+        self.assertIn(
+            "- occurs_on (event -> date) / occurrence_date_of (date -> event):",
+            prompt,
+        )
+        self.assertIn("- knows (person <-> person):", prompt)
+        self.assertIn("- related_to (any <-> any):", prompt)
+
+    def test_valid_labels_include_inverse_direction(self) -> None:
+        self.assertEqual(
+            valid_relation_labels(ENDPOINT_DEFINITIONS, "date", "event"),
+            ("related_to", "occurrence_date_of"),
+        )
+
+    def test_repair_reverses_a_relation_that_fits_backwards(self) -> None:
+        repaired = repair_relation_endpoints(
+            self.definition("occurs_on"), ENDPOINT_DEFINITIONS, "date", "event"
+        )
+
+        self.assertEqual(repaired, (self.definition("occurs_on"), True))
+
+    def test_repair_picks_the_single_restricted_fit(self) -> None:
+        repaired = repair_relation_endpoints(
+            self.definition("scheduled_for"), ENDPOINT_DEFINITIONS, "event", "date"
+        )
+
+        self.assertEqual(repaired, (self.definition("occurs_on"), False))
+
+    def test_repair_declines_when_several_relations_fit(self) -> None:
+        self.assertIsNone(
+            repair_relation_endpoints(
+                self.definition("knows"), ENDPOINT_DEFINITIONS, "person", "location"
+            )
+        )
 
 
 if __name__ == "__main__":

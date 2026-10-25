@@ -18,8 +18,10 @@ from uuid import UUID, uuid4
 from app.graph.edge_helpers import combine_edge_details, combine_probabilities
 from app.workflows.ingest.relation_types import (
     RelationDefinition,
+    allows_endpoints,
     canonicalize_relation_type,
     relation_ancestors,
+    repair_relation_endpoints,
 )
 from app.workflows.ingest.type_specific import (
     fill_type_specific,
@@ -382,6 +384,7 @@ class ResolveRepairItem:
         "conflicting_type_specific",
         "unsupported_relation_type",
         "invalid_relation_endpoints",
+        "repaired_relation_endpoints",
     ]
     source_id: UUID
     severity: Literal["low", "medium", "high"]
@@ -863,13 +866,47 @@ async def resolve_proposed_subgraph(
         elif relation.is_symmetric and str(from_node.node_id) > str(to_node.node_id):
             from_node, to_node = to_node, from_node
 
-        if (
-            relation.allowed_from_types
-            and from_node.node_type not in relation.allowed_from_types
-        ) or (
-            relation.allowed_to_types
-            and to_node.node_type not in relation.allowed_to_types
-        ):
+        endpoint_repair = (
+            None
+            if allows_endpoints(relation, from_node.node_type, to_node.node_type)
+            else repair_relation_endpoints(
+                relation,
+                list(relation_catalog.values()),
+                from_node.node_type,
+                to_node.node_type,
+            )
+        )
+        if endpoint_repair is not None:
+            repaired_relation, reverse_repaired = endpoint_repair
+            repair_items.append(
+                ResolveRepairItem(
+                    item_type="repaired_relation_endpoints",
+                    source_id=source_id,
+                    severity="low",
+                    message=(
+                        f"Stored edge {proposed_edge.proposed_edge_id!r} as "
+                        f"{repaired_relation.name!r}"
+                        f"{' with reversed endpoints' if reverse_repaired else ''}; "
+                        f"{relation.name!r} does not support endpoint types "
+                        f"{from_node.node_type!r} -> {to_node.node_type!r}."
+                    ),
+                    proposed_edge_id=proposed_edge.proposed_edge_id,
+                    details=_edge_repair_details(
+                        proposed_edge,
+                        from_node=from_node,
+                        to_node=to_node,
+                        canonical_relation_type=repaired_relation.name,
+                    ),
+                )
+            )
+            relation = repaired_relation
+            if reverse_repaired:
+                from_node, to_node = to_node, from_node
+            elif relation.is_symmetric and str(from_node.node_id) > str(
+                to_node.node_id
+            ):
+                from_node, to_node = to_node, from_node
+        elif not allows_endpoints(relation, from_node.node_type, to_node.node_type):
             repair_items.append(
                 ResolveRepairItem(
                     item_type="invalid_relation_endpoints",

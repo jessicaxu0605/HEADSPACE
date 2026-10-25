@@ -268,7 +268,13 @@ async def ingest_content(
     failure_phase = "extraction"
     try:
         extraction_result: ProposedSubgraphExtractionResult = (
-            await extract_proposed_subgraph(prepare_source(source), llm)
+            await extract_proposed_subgraph(
+                prepare_source(source),
+                llm,
+                # The Groq adapter loads the active catalog per ingest; reuse it
+                # for endpoint validation. Test doubles may not carry one.
+                relation_definitions=getattr(llm, "relation_definitions", None),
+            )
         )
         if enrichment_llm is not None:
             await _enrich_type_specific_or_record(
@@ -952,7 +958,11 @@ def _persist_review_items(
         item.proposed_edge_id
         for item in plan.repair_items
         if item.item_type
-        in {"unsupported_relation_type", "invalid_relation_endpoints"}
+        in {
+            "unsupported_relation_type",
+            "invalid_relation_endpoints",
+            "repaired_relation_endpoints",
+        }
         and item.proposed_edge_id is not None
     }
     for index, item in enumerate(extraction_items):
