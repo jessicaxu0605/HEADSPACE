@@ -13,7 +13,7 @@ import re
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Callable, Literal, TypeVar, cast
 from uuid import UUID
 
 from dotenv import dotenv_values
@@ -42,6 +42,8 @@ from app.workflows.ingest.types import (
     ProposedNode,
 )
 
+
+T = TypeVar("T")
 
 DEFAULT_GROQ_EXTRACTION_MODEL = "openai/gpt-oss-120b"
 DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[3] / ".env.local"
@@ -120,78 +122,108 @@ class GroqChunkExtractionLLM:
     ) -> ChunkExtractionOutput:
         """Return a parsed chunk extraction, repairing malformed responses."""
 
-        base_messages: list[dict[str, str]] = [
-            {
-                "role": "system",
-                "content": _build_system_prompt(self.relation_definitions),
-            },
-            {
-                "role": "user",
-                "content": _build_user_prompt(extraction_input, repair_context),
-            },
-        ]
-        messages = base_messages
-        raw_response: str | None = None
-        last_error: Exception | None = None
+        return await create_structured_completion(
+            self._client,
+            model=self.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": _build_system_prompt(self.relation_definitions),
+                },
+                {
+                    "role": "user",
+                    "content": _build_user_prompt(extraction_input, repair_context),
+                },
+            ],
+            schema_name="chunk_extraction_output",
+            schema=build_chunk_extraction_output_schema(self.relation_definitions),
+            parse=parse_chunk_extraction_output,
+            reasoning_effort=self.reasoning_effort,
+            max_completion_tokens=self.max_completion_tokens,
+            response_repair_attempts=self.response_repair_attempts,
+        )
 
-        for attempt in range(self.response_repair_attempts + 1):
-            raw_response = None
-            try:
-                response = await self._client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": {
-                            "name": "chunk_extraction_output",
-                            "strict": True,
-                            "schema": build_chunk_extraction_output_schema(
-                                self.relation_definitions
-                            ),
-                        },
-                    },
-                    reasoning_effort=self.reasoning_effort,
-                    max_completion_tokens=self.max_completion_tokens,
-                    stream=False,
-                )
-            except BadRequestError as exc:
-                # Groq checks the schema after generation and rejects a
-                # mismatch (e.g. an invented relation_type, or output truncated
-                # by max_completion_tokens) with a 400. Retry it like a parse
-                # failure instead of failing the whole ingest.
-                if _groq_error_code(exc) != "json_validate_failed":
-                    raise
-                last_error = ValueError(_groq_error_message(exc))
-                if attempt == self.response_repair_attempts:
-                    break
-                messages = [
-                    *base_messages,
-                    {
-                        "role": "user",
-                        "content": _build_response_repair_prompt(last_error),
-                    },
-                ]
-                continue
-            try:
-                raw_response = _response_content(response)
-                return parse_chunk_extraction_output(raw_response)
-            except (TypeError, ValueError, KeyError) as exc:
-                last_error = exc
-                if attempt == self.response_repair_attempts:
-                    break
-                # Resend only the error, not the malformed response, so repair
-                # calls stay the same size as the original request.
-                messages = [
-                    *base_messages,
-                    {"role": "user", "content": _build_response_repair_prompt(exc)},
-                ]
 
-        assert last_error is not None
-        raise MalformedChunkExtractionResponseError(
-            raw_response=raw_response,
-            attempts=self.response_repair_attempts + 1,
-            cause=last_error,
-        ) from last_error
+async def create_structured_completion(
+    client: Any,
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    schema_name: str,
+    schema: dict[str, Any],
+    parse: Callable[[str], T],
+    reasoning_effort: str,
+    max_completion_tokens: int,
+    response_repair_attempts: int,
+    temperature: float | None = None,
+) -> T:
+    """Request strict JSON output and parse it, repairing malformed responses.
+
+    temperature=None leaves Groq's default in place.
+    """
+
+    base_messages = messages
+    sampling = {} if temperature is None else {"temperature": temperature}
+    raw_response: str | None = None
+    last_error: Exception | None = None
+
+    for attempt in range(response_repair_attempts + 1):
+        raw_response = None
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": schema_name,
+                        "strict": True,
+                        "schema": schema,
+                    },
+                },
+                reasoning_effort=reasoning_effort,
+                max_completion_tokens=max_completion_tokens,
+                stream=False,
+                **sampling,
+            )
+        except BadRequestError as exc:
+            # Groq checks the schema after generation and rejects a
+            # mismatch (e.g. an invented relation_type, or output truncated
+            # by max_completion_tokens) with a 400. Retry it like a parse
+            # failure instead of failing the whole ingest.
+            if _groq_error_code(exc) != "json_validate_failed":
+                raise
+            last_error = ValueError(_groq_error_message(exc))
+            if attempt == response_repair_attempts:
+                break
+            messages = [
+                *base_messages,
+                {
+                    "role": "user",
+                    "content": _build_response_repair_prompt(last_error),
+                },
+            ]
+            continue
+        try:
+            raw_response = _response_content(response)
+            return parse(raw_response)
+        except (TypeError, ValueError, KeyError) as exc:
+            last_error = exc
+            if attempt == response_repair_attempts:
+                break
+            # Resend only the error, not the malformed response, so repair
+            # calls stay the same size as the original request.
+            messages = [
+                *base_messages,
+                {"role": "user", "content": _build_response_repair_prompt(exc)},
+            ]
+
+    assert last_error is not None
+    raise MalformedChunkExtractionResponseError(
+        raw_response=raw_response,
+        attempts=response_repair_attempts + 1,
+        cause=last_error,
+    ) from last_error
 
 
 def _groq_error_detail(exc: BadRequestError) -> dict[str, Any]:

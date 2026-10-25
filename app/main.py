@@ -53,6 +53,7 @@ from app.persistence.postgres.run_graph import PostgresRunGraphStore
 from app.workflows.ingest.enrich_type_specific import TypeSpecificEnrichmentLLM
 from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
 from app.workflows.ingest.groq_chunk_extraction import GroqChunkExtractionLLM
+from app.workflows.ingest.groq_two_stage_extraction import GroqTwoStageExtractionLLM
 from app.workflows.ingest.groq_type_specific_enrichment import (
     GroqTypeSpecificEnrichmentLLM,
 )
@@ -494,12 +495,17 @@ class RunGraphResponse(BaseModel):
     edges: list[RunGraphEdgeResponse]
 
 
-def get_extraction_llm() -> GroqChunkExtractionLLM:
-    """Build extraction from the current active PostgreSQL relation catalog."""
+def get_extraction_llm() -> ChunkExtractionLLM:
+    """Build extraction from the current active PostgreSQL relation catalog.
 
-    return GroqChunkExtractionLLM(
-        relation_definitions=load_active_relation_types()
-    )
+    INGEST_EXTRACTION_MODE=two_stage switches to separate node and edge calls
+    while the two prompt designs are compared.
+    """
+
+    relation_definitions = load_active_relation_types()
+    if os.getenv("INGEST_EXTRACTION_MODE") == "two_stage":
+        return GroqTwoStageExtractionLLM(relation_definitions=relation_definitions)
+    return GroqChunkExtractionLLM(relation_definitions=relation_definitions)
 
 
 @lru_cache(maxsize=1)

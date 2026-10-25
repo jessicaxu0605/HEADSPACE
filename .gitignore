@@ -20,3 +20,6 @@ AGENTS.md
 INGEST_HANDOFF.md
 
 prototypes/sql/
+
+# Local prompt examples and test fixtures that stay off the remote.
+*.local.txt
