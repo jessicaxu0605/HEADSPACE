@@ -1,4 +1,4 @@
-"""Workspace creation, membership listing, and last-used tracking."""
+"""Workspace creation, renaming, membership listing, and last-used tracking."""
 
 from __future__ import annotations
 
@@ -43,4 +43,15 @@ class WorkspaceService:
     ) -> bool:
         return await self._store.mark_last_used(
             workspace_id=workspace_id, user_id=authenticated.user.id
+        )
+
+    async def rename_workspace(
+        self,
+        *,
+        authenticated: AuthenticatedSession,
+        workspace_id: UUID,
+        name: str,
+    ) -> MemberWorkspace | None:
+        return await self._store.rename_workspace(
+            workspace_id=workspace_id, user_id=authenticated.user.id, name=name
         )

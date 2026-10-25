@@ -146,6 +146,12 @@ recorded on the caller's membership as `workspace_member.self_node_id`, and is
 queued for search projection rebuilding. Members without a self node have a
 null `self_node_id`.
 
+`PATCH /api/v1/workspaces/{workspace_id}` requires a bearer token and accepts a
+new `name` (trimmed; blank names are rejected with `422`). Only an active owner
+of a live workspace may rename it (`403` otherwise). It returns the updated
+workspace in the same shape as the listing, and the rename bumps
+`workspaces.updated_at` without changing `last_edited_at`.
+
 Workspace creation does not modify the current session or issue a replacement
 token. Clients provide the target `workspace_id` on workspace-scoped requests;
 membership and role are authorized independently of the session.

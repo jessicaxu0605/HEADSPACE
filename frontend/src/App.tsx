@@ -61,6 +61,7 @@ function AppScreens() {
       <WorkspaceSelection
         workspaces={workspaceState.workspaces}
         onSelect={workspaceState.switchWorkspace}
+        onCreate={workspaceState.createWorkspace}
         onLogout={session.signOut}
       />
     );

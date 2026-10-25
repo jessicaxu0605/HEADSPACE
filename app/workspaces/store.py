@@ -36,6 +36,14 @@ class WorkspaceStore(Protocol):
 
     async def mark_last_used(self, *, workspace_id: UUID, user_id: UUID) -> bool: ...
 
+    async def rename_workspace(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        name: str,
+    ) -> MemberWorkspace | None: ...
+
 
 class WorkspaceMembershipStore(Protocol):
     async def get_active_membership(
@@ -218,6 +226,57 @@ class PostgresWorkspaceStore:
                 (workspace_id, user_id),
             )
         return cursor.rowcount > 0
+
+    async def rename_workspace(
+        self,
+        *,
+        workspace_id: UUID,
+        user_id: UUID,
+        name: str,
+    ) -> MemberWorkspace | None:
+        """Rename a workspace the user owns; None without owner access."""
+
+        async with get_async_connection() as conn:
+            row = await (
+                await conn.execute(
+                    """
+                    UPDATE workspaces AS w
+                    SET name = %s
+                    FROM workspace_member AS wm
+                    WHERE w.id = %s
+                      AND w.deleted_at IS NULL
+                      AND wm.workspace_id = w.id
+                      AND wm.user_id = %s
+                      AND wm.removed_at IS NULL
+                      AND wm.role = 'owner'
+                    RETURNING w.id, w.name, w.created_by_user_id, w.created_at,
+                              wm.role, wm.last_used_at,
+                              COALESCE(
+                                  GREATEST(
+                                      (SELECT max(n.updated_at) FROM memory_node AS n
+                                       WHERE n.workspace_id = w.id),
+                                      (SELECT max(e.updated_at) FROM memory_edge AS e
+                                       WHERE e.workspace_id = w.id)
+                                  ),
+                                  w.created_at
+                              ) AS last_edited_at
+                    """,
+                    (name, workspace_id, user_id),
+                )
+            ).fetchone()
+        if row is None:
+            return None
+        return MemberWorkspace(
+            workspace=Workspace(
+                id=row["id"],
+                name=row["name"],
+                created_by_user_id=row["created_by_user_id"],
+                created_at=row["created_at"],
+            ),
+            role=cast(WorkspaceRole, row["role"]),
+            last_used_at=row["last_used_at"],
+            last_edited_at=row["last_edited_at"],
+        )
 
 
 class PostgresWorkspaceMembershipStore:

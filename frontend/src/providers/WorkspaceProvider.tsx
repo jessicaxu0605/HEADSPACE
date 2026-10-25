@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  createWorkspace as requestCreateWorkspace,
   listWorkspaces,
   markWorkspaceLastUsed,
   subscribeWorkspaceAccessDenied,
@@ -34,6 +35,7 @@ export type WorkspaceState =
       status: "selecting";
       workspaces: Workspace[];
       switchWorkspace: (workspaceId: string) => void;
+      createWorkspace: (name: string, createSelfNode: boolean) => Promise<void>;
     }
   | ({ status: "ready" } & ActiveWorkspace);
 
@@ -132,6 +134,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [loaded, userId],
   );
 
+  // Creates a workspace, optionally with the user's self node, and opens it.
+  // Rejects with the API error so the caller can show it.
+  const createWorkspace = useCallback(
+    async (name: string, createSelfNode: boolean): Promise<void> => {
+      if (userId === null) return;
+      const { workspace } = await requestCreateWorkspace(name, { createSelfNode });
+      setLoaded((current) =>
+        current?.userId === userId
+          ? {
+              ...current,
+              workspaces: [...current.workspaces, workspace],
+              activeId: workspace.id,
+            }
+          : current,
+      );
+      void markWorkspaceLastUsed(workspace.id).catch(() => undefined);
+    },
+    [userId],
+  );
+
   // Leaves the active workspace for the selection page. The server's last-used
   // workspace is untouched, so a reload still reopens it.
   const showAllWorkspaces = useCallback((): void => {
@@ -152,6 +174,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           status: "selecting",
           workspaces: loaded.workspaces,
           switchWorkspace,
+          createWorkspace,
         };
       }
       return {
@@ -168,7 +191,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return { status: "error", message: failure.message, retry };
     }
     return { status: "loading" };
-  }, [failure, loaded, retry, showAllWorkspaces, switchWorkspace, userId]);
+  }, [
+    createWorkspace,
+    failure,
+    loaded,
+    retry,
+    showAllWorkspaces,
+    switchWorkspace,
+    userId,
+  ]);
 
   return (
     <WorkspaceContext.Provider value={state}>{children}</WorkspaceContext.Provider>

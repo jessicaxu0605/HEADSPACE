@@ -24,11 +24,10 @@ from app.workspaces.store import PostgresWorkspaceStore
 router = APIRouter(prefix="/api/v1/workspaces", tags=["workspaces"])
 
 
-class CreateWorkspaceRequest(BaseModel):
+class WorkspaceNameRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=200)
-    create_self_node: bool = False
 
     @field_validator("name")
     @classmethod
@@ -37,6 +36,14 @@ class CreateWorkspaceRequest(BaseModel):
         if not value:
             raise ValueError("name must not be blank")
         return value
+
+
+class CreateWorkspaceRequest(WorkspaceNameRequest):
+    create_self_node: bool = False
+
+
+class RenameWorkspaceRequest(WorkspaceNameRequest):
+    pass
 
 
 class WorkspaceResponse(BaseModel):
@@ -133,6 +140,26 @@ async def list_workspaces(
         ],
         last_used_workspace_id=last_used.workspace.id if last_used else None,
     )
+
+
+@router.patch("/{workspace_id}", response_model=WorkspaceResponse)
+async def rename_workspace(
+    workspace_id: UUID,
+    request: RenameWorkspaceRequest,
+    authenticated: AuthenticatedSession = Depends(get_current_session),
+    service: WorkspaceService = Depends(get_workspace_service),
+) -> WorkspaceResponse:
+    """Rename a workspace the current user owns."""
+
+    renamed = await service.rename_workspace(
+        authenticated=authenticated, workspace_id=workspace_id, name=request.name
+    )
+    if renamed is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace owner access required.",
+        )
+    return WorkspaceResponse.from_member_workspace(renamed)
 
 
 @router.put(

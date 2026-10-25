@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 from uuid import uuid4
@@ -44,6 +45,7 @@ class FakeWorkspaceStore:
         self.call = None
         self.list_call = None
         self.mark_call = None
+        self.rename_call = None
         self.member_workspaces = member_workspaces or []
 
     async def create_workspace(self, **kwargs):
@@ -70,6 +72,15 @@ class FakeWorkspaceStore:
             item.workspace.id == kwargs["workspace_id"]
             for item in self.member_workspaces
         )
+
+    async def rename_workspace(self, **kwargs):
+        self.rename_call = kwargs
+        for item in self.member_workspaces:
+            if item.workspace.id == kwargs["workspace_id"] and item.role == "owner":
+                return replace(
+                    item, workspace=replace(item.workspace, name=kwargs["name"])
+                )
+        return None
 
 
 class WorkspaceServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -224,6 +235,70 @@ class WorkspaceApiTests(unittest.TestCase):
         response = TestClient(app).put(f"/api/v1/workspaces/{uuid4()}/last-used")
 
         self.assertEqual(response.status_code, 403)
+
+    def test_renames_owned_workspace(self):
+        authenticated = _authenticated()
+        workspace = _workspace("Personal", authenticated.user.id)
+        store = FakeWorkspaceStore([MemberWorkspace(workspace, "owner")])
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).patch(
+            f"/api/v1/workspaces/{workspace.id}", json={"name": " Journal "}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["id"], str(workspace.id))
+        self.assertEqual(body["name"], "Journal")
+        self.assertEqual(body["role"], "owner")
+        self.assertEqual(
+            store.rename_call,
+            {
+                "workspace_id": workspace.id,
+                "user_id": authenticated.user.id,
+                "name": "Journal",
+            },
+        )
+
+    def test_rejects_renaming_without_ownership(self):
+        authenticated = _authenticated()
+        workspace = _workspace("Family")
+        store = FakeWorkspaceStore([MemberWorkspace(workspace, "editor")])
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).patch(
+            f"/api/v1/workspaces/{workspace.id}", json={"name": "Mine now"}
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_rejects_blank_workspace_name_on_rename(self):
+        authenticated = _authenticated()
+        store = FakeWorkspaceStore()
+        app.dependency_overrides[get_current_session] = lambda: authenticated
+        app.dependency_overrides[get_workspace_service] = lambda: WorkspaceService(
+            store=store
+        )
+
+        response = TestClient(app).patch(
+            f"/api/v1/workspaces/{uuid4()}", json={"name": "   "}
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIsNone(store.rename_call)
+
+    def test_rejects_unauthenticated_workspace_rename(self):
+        response = TestClient(app).patch(
+            f"/api/v1/workspaces/{uuid4()}", json={"name": "Journal"}
+        )
+
+        self.assertEqual(response.status_code, 401)
 
     def test_rejects_unauthenticated_last_used_update(self):
         response = TestClient(app).put(f"/api/v1/workspaces/{uuid4()}/last-used")

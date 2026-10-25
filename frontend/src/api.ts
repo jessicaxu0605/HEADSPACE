@@ -278,6 +278,33 @@ export const markWorkspaceLastUsed = async (workspaceId: string): Promise<void> 
   );
 };
 
+export type CreatedWorkspace = {
+  workspace: Workspace;
+  self_node_id: string | null;
+};
+
+// Creates a workspace owned by the caller. With a self node, the caller's
+// profile becomes a person node in it, as signup does for the default one.
+export const createWorkspace = async (
+  name: string,
+  options: { createSelfNode?: boolean } = {},
+): Promise<CreatedWorkspace> => {
+  const payload = await requestJson<CreatedWorkspace>("/api/v1/workspaces", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      create_self_node: options.createSelfNode ?? false,
+    }),
+  });
+
+  if (!payload?.workspace?.id) {
+    throw new Error("The API returned an unexpected response.");
+  }
+
+  return payload;
+};
+
 export const createManualIngestion = async (
   workspaceId: string,
   content: string,

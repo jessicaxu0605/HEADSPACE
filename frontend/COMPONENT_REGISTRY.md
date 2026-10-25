@@ -29,6 +29,7 @@ import {
   AutoGrowingTextArea,
   BlurredContainer,
   BrainLoader,
+  Checkbox,
   FadeTransition,
   InlineWarning,
   PageTransition,
@@ -56,6 +57,7 @@ Adjust the relative path as needed, but keep imports on the package barrel.
 | One-line input with delayed and blur validation | `ValidatedTextField` |
 | Expanding, softly scrolling multiline input | `AutoGrowingTextArea` |
 | Expanding multiline input with validation | `ValidatedTextArea` |
+| A yes/no option in a form | `Checkbox` |
 | A warning belonging to custom input UI | `InlineWarning` |
 | Reuse validation behavior in a new input primitive | `useFieldValidation` |
 | Fade a conditional element in and out | `FadeTransition` |
@@ -89,7 +91,9 @@ Composes `TextField`, `useFieldValidation`, and `InlineWarning`.
 Use it as the default field for forms that can reject or warn about a value. Its
 local validator runs after 500 ms of inactivity by default and immediately on blur.
 Use `externalWarning` for server errors and `warningDelayMs` only when the interaction
-has a documented reason to differ.
+has a documented reason to differ. Its warnings follow the under-field text rule
+in `InlineWarning`: a validator that would only report an empty required value should
+return `""`.
 
 #### `AutoGrowingTextArea`
 
@@ -111,7 +115,19 @@ Composes `AutoGrowingTextArea`, `useFieldValidation`, and `InlineWarning`.
 
 Use it for freeform input that needs the same pause-or-blur warning behavior as a
 validated text field. Prefer it over manually placing an `InlineWarning` after an
-`AutoGrowingTextArea`.
+`AutoGrowingTextArea`. Its warnings follow the same under-field text rule as
+`InlineWarning`.
+
+#### `Checkbox`
+
+A controlled native checkbox drawn as a small outlined circle that fills solid
+when checked, labelled by its children. Pass `checked` and `onCheckedChange`; other native
+input attributes and a `ref` pass through to the input, and `className` goes on the
+wrapping label.
+
+Use it for an independent on/off option inside a form, such as "add me to this
+headspace" on `NewWorkspace`. Do not use it for an action that takes effect
+immediately outside a form, or to pick one of several options.
 
 #### `InlineWarning`
 
@@ -120,6 +136,12 @@ A subtle, accessible warning that fades beneath its owning input.
 Use it directly only for a custom input that cannot use one of the validated
 wrappers. Pass an empty or missing `message` to hide it. Do not add ad hoc error
 paragraphs or custom warning timers beside standard fields.
+
+The text under a field is only for warnings, errors (including server errors), or
+context the user could not infer from the field itself. It is never a label, a
+placeholder restated, or an obvious prompt such as "Give this a name." For a
+required field that is merely empty, return no warning and disable the submit
+action until it has a value instead.
 
 ### Buttons
 
@@ -242,7 +264,8 @@ of Headspace domain state and APIs.
 | `SessionMenu` | Fixed top-right hamburger menu on signed-in screens with "all workspaces" (when `onShowWorkspaces` is passed) and "log out". Add further account-level actions here rather than placing more fixed buttons. |
 | `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
 | `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. |
-| `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. |
+| `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. A trailing outlined "+ new workspace" card swaps the page for `NewWorkspace`. |
+| `NewWorkspace` | Full screen for naming a new workspace, with a `Checkbox` for adding the user's self node. Submitting calls `createWorkspace`, which creates and opens it; "← back" returns to `WorkspaceSelection`. Reuses the auth screens' layout classes. |
 | `WorkspaceUnavailable` | Signed-in screen for an account whose workspaces failed to load or that has no active membership. |
 
 Small render helpers that are private to one feature, such as memory cards inside
@@ -256,7 +279,7 @@ nests `SessionProvider` > `WorkspaceProvider` and picks one screen from their st
 | Provider / hook | Responsibility and reuse boundary |
 | --- | --- |
 | `SessionProvider` / `useSession()` | Whether this browser is signed in: `checking`, `signed-out`, or `signed-in` with the `user`, plus `signIn(loginResponse)` and `signOut()`. The access token in `api.ts` is the source of truth (read with `useSyncExternalStore`); `api.ts` clears it on a 401, which signs the reader out everywhere. Do not store tokens or session flags elsewhere. |
-| `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then the server's `last_used_workspace_id`, which signup sets to the default workspace); otherwise it reports `selecting` so `App` shows `WorkspaceSelection`. `switchWorkspace` records the choice with `markWorkspaceLastUsed`. Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
+| `WorkspaceProvider` / `useWorkspaceState()` | Loads the signed-in user's memberships and chooses the active workspace (current, then the server's `last_used_workspace_id`, which signup sets to the default workspace); otherwise it reports `selecting` (with `createWorkspace`) so `App` shows `WorkspaceSelection`. `switchWorkspace` records the choice with `markWorkspaceLastUsed`. Re-checks memberships when a workspace request returns 403. Only `App` should need the full state. |
 | `useWorkspace()` | The active `workspace`, its `role`, `canWrite`, `switchWorkspace`, and `showAllWorkspaces` (clears the active choice to return to `WorkspaceSelection` without changing the server's last-used workspace), for features inside the signed-in app. Pass `workspace.id` explicitly to every workspace-scoped `api.ts` function; never cache a workspace id in a module. |
 
 The signed-in app is keyed by workspace id, so switching workspace remounts it and

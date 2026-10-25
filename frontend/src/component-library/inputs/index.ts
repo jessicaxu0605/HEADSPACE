@@ -1,3 +1,5 @@
+export { default as Checkbox } from "./Checkbox";
+export type { CheckboxProps } from "./Checkbox";
 export { default as AutoGrowingTextArea } from "./AutoGrowingTextArea";
 export type { AutoGrowingTextAreaProps } from "./AutoGrowingTextArea";
 export { default as InlineWarning } from "./InlineWarning";

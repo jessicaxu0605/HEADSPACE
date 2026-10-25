@@ -1469,6 +1469,17 @@ textarea:focus {
   text-transform: lowercase;
 }
 
+/* The "+" card keeps the card's footprint as an outline instead of a fill;
+   its text button carries the hover feedback instead. */
+.workspace-selection-new,
+.workspace-selection-new:hover {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #d1ccc2;
+  cursor: default;
+}
+
 .auth-card h1 {
   max-width: 520px;
   margin: 10px 0 14px;
@@ -1563,6 +1574,61 @@ textarea:focus {
 .auth-about-entry {
   --text-entry-fade-solid: #fbfaf7;
   --text-entry-fade-clear: rgba(251, 250, 247, 0);
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #555149;
+  font-family: Iowan Old Style, Baskerville, "Times New Roman", serif;
+  font-size: 1.04rem;
+  cursor: pointer;
+}
+
+/* The checked fill always matches the border, including on hover. */
+.checkbox-input {
+  --checkbox-color: #aaa7a0;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  background: transparent;
+  border: 1px solid var(--checkbox-color);
+  border-radius: 50%;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.checkbox-input:hover {
+  --checkbox-color: #68645c;
+}
+
+.checkbox-input:checked {
+  background: var(--checkbox-color);
+}
+
+.checkbox-input:focus-visible {
+  outline: 1px solid #68645c;
+  outline-offset: 3px;
+}
+
+.checkbox:has(.checkbox-input:disabled) {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.checkbox-input:disabled {
+  cursor: wait;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkbox-input {
+    transition: none;
+  }
 }
 
 .auth-login-actions,
