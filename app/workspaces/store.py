@@ -74,20 +74,7 @@ async def insert_workspace(
     assert workspace_row is not None
     workspace_id = workspace_row["id"]
 
-    member_row = await (
-        await conn.execute(
-            """
-            INSERT INTO workspace_member (
-                workspace_id, user_id, role, joined_at, last_used_at
-            )
-            VALUES (%s, %s, 'owner', now(), CASE WHEN %s THEN now() END)
-            RETURNING role
-            """,
-            (workspace_id, user.id, mark_last_used),
-        )
-    ).fetchone()
-    assert member_row is not None
-
+    # The self node is created first so the membership row can point at it.
     self_node_id = None
     if create_self_node:
         profile = {}
@@ -117,15 +104,6 @@ async def insert_workspace(
         self_node_id = node_row["id"]
         await conn.execute(
             """
-            INSERT INTO node_external_id (
-                workspace_id, node_id, provider, external_id, confidence
-            )
-            VALUES (%s, %s, 'headspace_user', %s, 1.0)
-            """,
-            (workspace_id, self_node_id, str(user.id)),
-        )
-        await conn.execute(
-            """
             INSERT INTO projection_rebuild_queue (
                 workspace_id, object_type, object_id
             )
@@ -133,6 +111,21 @@ async def insert_workspace(
             """,
             (workspace_id, self_node_id),
         )
+
+    member_row = await (
+        await conn.execute(
+            """
+            INSERT INTO workspace_member (
+                workspace_id, user_id, role, joined_at, last_used_at,
+                self_node_id
+            )
+            VALUES (%s, %s, 'owner', now(), CASE WHEN %s THEN now() END, %s)
+            RETURNING role
+            """,
+            (workspace_id, user.id, mark_last_used, self_node_id),
+        )
+    ).fetchone()
+    assert member_row is not None
 
     workspace = Workspace(
         id=workspace_row["id"],

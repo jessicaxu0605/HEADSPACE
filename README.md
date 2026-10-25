@@ -141,9 +141,10 @@ workspace as last used, so a new account's first login opens it directly.
 `name` plus `create_self_node` (default `false`). Creation is atomic: it creates
 the workspace, adds the caller as an active owner, optionally creates a
 canonical `person` node from the caller's profile. When requested, the self
-node uses `about` as its summary, stores birthday as a person detail, receives
-a stable `headspace_user` external ID, and is queued for search projection
-rebuilding.
+node uses `about` as its summary, stores birthday as a person detail, is
+recorded on the caller's membership as `workspace_member.self_node_id`, and is
+queued for search projection rebuilding. Members without a self node have a
+null `self_node_id`.
 
 Workspace creation does not modify the current session or issue a replacement
 token. Clients provide the target `workspace_id` on workspace-scoped requests;

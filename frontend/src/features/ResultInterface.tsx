@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { NodeNeighborhoodResponse, NodeQueryMatch } from "../api";
 import type { GraphSelection } from "../hooks/useNeighborhoodExplorer";
 import type { MemoryNodeReference } from "../memory_graph";
@@ -185,73 +180,71 @@ export default function ResultInterface({
           visible={graph !== null}
         >
           {graph && (
-          <div className="graph-body">
-            <BlurredContainer
-              as="header"
-              blurredEdges={["top", "right", "bottom", "left"]}
-              edgeBlurSize={28}
-              className="graph-header"
-              ref={graphHeaderRef}
-            >
-              {graphSelection.kind === "run" ? (
-                <>
-                  <h2 className="graph-title">what you just shared</h2>
-                  <p className="graph-summary">
-                    {runNodeCount === 1
-                      ? "1 thing remembered"
-                      : `${runNodeCount} things remembered`}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="graph-kicker">
-                    {startNode?.node_type ?? graphSelection.node_type}
-                  </p>
-                  <h2 className="graph-title">
-                    {startNode?.title ?? graphSelection.title}
-                  </h2>
-                  {startNode?.summary && (
-                    <p className="graph-summary">{startNode.summary}</p>
-                  )}
-                  {startNode && (
-                    <NodeDetails
-                      aliases={startNode.aliases}
-                      externalIds={startNode.external_ids}
-                      details={startNode.details}
-                    />
-                  )}
-                </>
-              )}
-            </BlurredContainer>
-
-            <section className="graph-section">
-              {isRunView && runNodeCount === 0 ? (
-                <p className="graph-empty">nothing new was remembered.</p>
-              ) : !isRunView && connectedCount === 0 ? (
-                <p className="graph-empty">no connected nodes yet.</p>
-              ) : (
-                <NeighborhoodGraph
-                  graph={graph}
-                  overlayRef={graphHeaderRef}
-                  onExpandNode={onExpandNode}
-                  onOpenNode={onOpenNode}
-                  onOpenEdge={setOpenEdgeId}
-                />
-              )}
-              <PresenceTransition
-                as="p"
-                className={`graph-depth${
-                  expandNoticeIsError ? " error-message" : ""
-                }`}
-                enter="fade-up"
-                exit="fade-up"
-                role={expandNoticeIsError ? "alert" : undefined}
-                visible={Boolean(expandNotice)}
+            <div className="graph-body">
+              <BlurredContainer
+                as="header"
+                blurredEdges={["top", "right", "bottom", "left"]}
+                edgeBlurSize={28}
+                className="graph-header"
+                ref={graphHeaderRef}
               >
-                {expandNotice}
-              </PresenceTransition>
-            </section>
-          </div>
+                {graphSelection.kind === "run" ? (
+                  <>
+                    <h2 className="graph-title">what you just shared</h2>
+                    <p className="graph-summary">
+                      {runNodeCount === 1
+                        ? "1 thing remembered"
+                        : `${runNodeCount} things remembered`}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="graph-kicker">
+                      {startNode?.node_type ?? graphSelection.node_type}
+                    </p>
+                    <h2 className="graph-title">
+                      {startNode?.title ?? graphSelection.title}
+                    </h2>
+                    {startNode?.summary && (
+                      <p className="graph-summary">{startNode.summary}</p>
+                    )}
+                    {startNode && (
+                      <NodeDetails
+                        aliases={startNode.aliases}
+                        externalIds={startNode.external_ids}
+                        details={startNode.details}
+                      />
+                    )}
+                  </>
+                )}
+              </BlurredContainer>
+
+              <section className="graph-section">
+                {isRunView && runNodeCount === 0 ? (
+                  <p className="graph-empty">nothing new was remembered.</p>
+                ) : (
+                  <NeighborhoodGraph
+                    graph={graph}
+                    overlayRef={graphHeaderRef}
+                    onExpandNode={onExpandNode}
+                    onOpenNode={onOpenNode}
+                    onOpenEdge={setOpenEdgeId}
+                  />
+                )}
+                <PresenceTransition
+                  as="p"
+                  className={`graph-depth${
+                    expandNoticeIsError ? " error-message" : ""
+                  }`}
+                  enter="fade-up"
+                  exit="fade-up"
+                  role={expandNoticeIsError ? "alert" : undefined}
+                  visible={Boolean(expandNotice)}
+                >
+                  {expandNotice}
+                </PresenceTransition>
+              </section>
+            </div>
           )}
         </PresenceTransition>
       </section>

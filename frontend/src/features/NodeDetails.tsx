@@ -15,7 +15,12 @@ const externalLink = (href: string, text: string) => (
   </a>
 );
 
-const formatExternalId = ({ provider, external_id }: MemoryExternalId): Row => {
+// Only providers whose ids mean something to a person are shown; opaque ids
+// (account uuids, sync keys) tell the user nothing.
+const formatExternalId = ({
+  provider,
+  external_id,
+}: MemoryExternalId): Row | null => {
   const key = `${provider}:${external_id}`;
   switch (provider.toLowerCase()) {
     case "email":
@@ -40,7 +45,7 @@ const formatExternalId = ({ provider, external_id }: MemoryExternalId): Row => {
         ),
       };
     default:
-      return { key, label: provider.replaceAll("_", " "), value: external_id };
+      return null;
   }
 };
 
@@ -99,7 +104,9 @@ export default function NodeDetails({
     ...(aliases.length > 0
       ? [{ key: "aliases", label: "also known as", value: aliases.join(", ") }]
       : []),
-    ...externalIds.map(formatExternalId),
+    ...externalIds
+      .map(formatExternalId)
+      .filter((row): row is Row => row !== null),
     ...details.map((detail) => ({
       key: detail.name,
       label: detail.label,

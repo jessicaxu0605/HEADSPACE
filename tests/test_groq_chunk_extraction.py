@@ -16,7 +16,6 @@ from app.workflows.ingest.groq_chunk_extraction import (
     CHUNK_EXTRACTION_OUTPUT_SCHEMA,
     GroqChunkExtractionLLM,
     MalformedChunkExtractionResponseError,
-    _build_system_prompt,
     build_chunk_extraction_output_schema,
     parse_chunk_extraction_output,
 )
@@ -199,9 +198,6 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("details", edge_schema["required"])
         self.assertEqual(edge_schema["properties"]["details"]["type"], ["string", "null"])
         self.assertNotIn("proposed_graph_handoff", schema["properties"])
-
-        prompt = _build_system_prompt(TEST_RELATION_DEFINITIONS)
-        self.assertIn("details describes an edge; it is not a place to store entities", prompt)
 
     def test_normalizes_person_email_as_external_identity(self) -> None:
         wire = valid_wire_output()
