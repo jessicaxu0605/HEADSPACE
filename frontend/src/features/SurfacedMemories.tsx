@@ -13,7 +13,6 @@ import type {
 import { useWorkspace } from "../providers/WorkspaceProvider";
 
 type SurfacedMemoriesProps = {
-  hidden: boolean;
   onOpenNode: (selection: MemoryNodeReference) => void;
 };
 
@@ -228,7 +227,6 @@ function UpcomingCard({
 }
 
 export default function SurfacedMemories({
-  hidden,
   onOpenNode,
 }: SurfacedMemoriesProps) {
   const { workspace } = useWorkspace();
@@ -261,12 +259,7 @@ export default function SurfacedMemories({
     landing !== null && upcoming.length === 0 && memories.length === 0;
 
   return (
-    <section
-      className={`surfaced-memories${hidden ? " is-hidden" : ""}`}
-      aria-label="Surfaced memories"
-      aria-hidden={hidden || undefined}
-      inert={hidden}
-    >
+    <section className="surfaced-memories" aria-label="Surfaced memories">
       <div className="surfaced-memories-inner">
         <PresenceTransition
           as="p"
@@ -284,7 +277,7 @@ export default function SurfacedMemories({
           exit="fade-up"
           visible={empty}
         >
-          nothing to surface yet. add a thought below.
+          nothing to surface yet. add a memory to start.
         </PresenceTransition>
         {landing !== null && !empty && (
           <div className="surfaced-memories-content">

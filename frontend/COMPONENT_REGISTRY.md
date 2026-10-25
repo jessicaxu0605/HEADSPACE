@@ -151,6 +151,12 @@ A borderless serif text button whose underline draws in from the left on hover a
 keyboard focus and retracts on leave. It owns the reset, underline animation, focus
 treatment, and disabled state.
 
+`size` sets the text size: `s` (0.92rem; the top-right page actions), `m`
+(1.08rem, the default), or `l` (1.3rem). A leading inline `<svg className="text-button-icon"
+aria-hidden="true">` (stroked, 24×24 viewBox) sits before the label at text size, as
+on the top-right "search" and "add a memory" actions. Use `size` rather than a feature class to change a
+text button's font size.
+
 Use it for Headspace's quiet text actions: "continue →", "← back", "remember this →",
 and similar. Native button attributes and a `ref` pass through. It defaults to
 `type="button"`, so pass `type="submit"` explicitly for form submission. Add a
@@ -256,14 +262,14 @@ of Headspace domain state and APIs.
 | Component | Responsibility and reuse boundary |
 | --- | --- |
 | `AuthFlow` | Login and multi-step signup screens. Hands the login response to `useSession().signIn`; it does not store tokens or check sessions. Add authentication/onboarding steps here rather than creating a parallel flow. |
-| `SearchInterface` | Search input and submission UI. Extend for search-entry behavior; results belong to `ResultInterface`. |
-| `ResultInterface` | Search results, graph result states, and relationship overlay coordination. |
+| `SearchInterface` | Search input and submission UI on the search page. Extend for search-entry behavior; results belong to `ResultInterface`. |
+| `ResultInterface` | Search results, graph result states, and relationship overlay coordination. `backLabel` names where the graph's back button returns (the feed, search results, or the entry page). |
 | `NeighborhoodGraph` | Force-directed canvas graph and its graph-specific interaction/measurement behavior. Its physics are not general UI motion. |
 | `NodeDetails` | Detailed presentation of a selected memory node. Extend for additional node metadata. |
 | `RelationshipPage` | Detailed relationship view and evidence presentation. |
-| `SessionMenu` | Fixed top-right hamburger menu on signed-in screens with "all workspaces" (when `onShowWorkspaces` is passed) and "log out". Add further account-level actions here rather than placing more fixed buttons. |
-| `SurfacedMemories` | Landing-page surfaced memories, upcoming items, and their coordinated collapse around search. |
-| `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes. `prompt` replaces the random starter prompt (`WorkspaceWelcome` asks what the headspace is for). |
+| `SessionMenu` | Fixed top-right bar on signed-in screens: optional page `actions` (`size="s"` `TextButton`s such as "search" and "add a memory") beside a hamburger menu with "all spaces" (when `onShowWorkspaces` is passed) and "log out". "← back" is not one of them: `App` pins it top left in `.page-back`, level with the toggle. Put further top-right page actions in `actions` and account-level actions in the menu rather than placing more fixed buttons. |
+| `SurfacedMemories` | The memory feed that is the whole landing page: surfaced memories and upcoming items. |
+| `TextEntryInterface` | Manual memory-entry workflow and submission notifications. Rendered only when the workspace allows writes, and kept mounted on every signed-in page so submissions and notifications survive navigation; `formHidden` hides the form off the entry page. `prompt` replaces the random starter prompt (`WorkspaceWelcome` asks what the headspace is for). |
 | `WorkspaceSelection` | Signed-in screen listing the user's workspaces as left-aligned landscape cards (name, last edited, role) when none is current or remembered. Selecting one calls `switchWorkspace`, which makes it active and opens its landing page. A trailing outlined "+ new workspace" card swaps the page for `NewWorkspace`. |
 | `NewWorkspace` | Full screen for naming a new workspace, with a `Checkbox` for adding the user's self node. Submitting calls `createWorkspace`, which creates and opens it on `WorkspaceWelcome`; "← back" returns to `WorkspaceSelection`. Reuses the auth screens' layout classes. |
 | `WorkspaceWelcome` | First page of a just-created workspace, shown by `App` in place of the landing page: the workspace's graph (the user's self node, or nothing), its name, and "add some memories ↓", which scrolls to `TextEntryInterface` below. Viewing a submitted memory leaves it for good. Separate from the explore graph page in `ResultInterface`. |
@@ -293,8 +299,6 @@ pins the workspace to that screen so it stays stable while fading out.
   export or call it from features.
 - The loading pulse in `SearchInterface` is continuous state feedback and should not
   be replaced with a presence transition.
-- The surfaced-memory collapse coordinates grid height, opacity, and translation. It
-  remains feature CSS until there is a tested reusable collapse/auto-height primitive.
 - `NeighborhoodGraph` uses a canvas force simulation; shared DOM motion components do
   not apply to it.
 - Hover, focus, underline, border, and input-height transitions are interaction or

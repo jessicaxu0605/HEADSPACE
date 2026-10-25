@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   BlurredContainer,
   FadeTransition,
@@ -9,6 +9,8 @@ type SessionMenuProps = {
   onLogout: () => void;
   // Omitted on the workspace selection page, which already lists them all.
   onShowWorkspaces?: () => void;
+  // Page actions shown as text buttons beside the toggle.
+  actions?: ReactNode;
 };
 
 // The fixed top-right menu for a signed-in screen. Closes on an outside
@@ -16,6 +18,7 @@ type SessionMenuProps = {
 export default function SessionMenu({
   onLogout,
   onShowWorkspaces,
+  actions,
 }: SessionMenuProps) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -47,19 +50,22 @@ export default function SessionMenu({
 
   return (
     <div className="session-menu" ref={rootRef}>
-      <button
-        ref={toggleRef}
-        className="session-menu-toggle"
-        type="button"
-        aria-label="Menu"
-        aria-expanded={open}
-        aria-controls={menuId}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span aria-hidden="true" />
-        <span aria-hidden="true" />
-        <span aria-hidden="true" />
-      </button>
+      <div className="session-menu-bar">
+        {actions}
+        <button
+          ref={toggleRef}
+          className="session-menu-toggle"
+          type="button"
+          aria-label="Menu"
+          aria-expanded={open}
+          aria-controls={menuId}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+        </button>
+      </div>
       {/* Kept mounted so opening has a hidden frame to fade in from. */}
       <FadeTransition id={menuId} unmountOnExit={false} visible={open}>
         <BlurredContainer
@@ -68,11 +74,13 @@ export default function SessionMenu({
           edgeBlurSize={12}
         >
           {onShowWorkspaces && (
-            <TextButton onClick={() => choose(onShowWorkspaces)}>
+            <TextButton size="s" onClick={() => choose(onShowWorkspaces)}>
               all spaces
             </TextButton>
           )}
-          <TextButton onClick={() => choose(onLogout)}>log out</TextButton>
+          <TextButton size="s" onClick={() => choose(onLogout)}>
+            log out
+          </TextButton>
         </BlurredContainer>
       </FadeTransition>
     </div>

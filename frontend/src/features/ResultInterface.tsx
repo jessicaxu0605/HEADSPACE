@@ -15,6 +15,8 @@ import NodeDetails from "./NodeDetails";
 import RelationshipPage from "./RelationshipPage";
 
 type ResultInterfaceProps = {
+  // Names where the graph's back button returns to.
+  backLabel: string;
   expandNotice: string;
   expandNoticeIsError: boolean;
   graph: NodeNeighborhoodResponse | null;
@@ -33,6 +35,7 @@ type ResultInterfaceProps = {
 };
 
 export default function ResultInterface({
+  backLabel,
   expandNotice,
   expandNoticeIsError,
   graph,
@@ -152,7 +155,7 @@ export default function ResultInterface({
           className="graph-topbar"
         >
           <button className="graph-back" type="button" onClick={onBack}>
-            {isRunView ? "← back" : "← back to results"}
+            {backLabel}
           </button>
         </BlurredContainer>
         {graphLoading && (

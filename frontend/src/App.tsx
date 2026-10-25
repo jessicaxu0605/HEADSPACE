@@ -89,13 +89,19 @@ function AppScreens() {
   );
 }
 
+
+// The signed-in pages besides the welcome page. The feed is the landing page;
+// search and adding a memory each have their own page, reached from the
+// top-right actions.
+type View = "feed" | "search" | "entry";
+
 function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
+  const [view, setView] = useState<View>("feed");
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<NodeQueryMatch[]>([]);
   const [searchStatus, setSearchStatus] = useState("");
   const [searchStatusIsError, setSearchStatusIsError] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
   const searchControllerRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const entrySectionRef = useRef<HTMLElement>(null);
@@ -184,12 +190,24 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
     openNode(selection);
   };
 
-  const backToResults = (): void => {
+  // Closing the graph returns to whichever page opened it.
+  const backFromGraph = (): void => {
     restoreResultsFocusRef.current = true;
     graphExplorer.close();
   };
 
+  const showView = (nextView: View): void => {
+    window.scrollTo({ top: 0 });
+    graphExplorer.close();
+    setView(nextView);
+  };
+
+  // The welcome page keeps the entry below it; everywhere else it is a page.
   const openEntry = (): void => {
+    if (!showingWelcome) {
+      showView("entry");
+      return;
+    }
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
@@ -210,104 +228,147 @@ function AuthenticatedApp({ onLogout }: { onLogout: () => void }) {
   const viewRun = (runId: string): void => {
     selectedNodeIdRef.current = null;
     selectedButtonRef.current = null;
-    // The graph page hides the entry section, so jump rather than animate.
+    // The graph page hides the entry form, so jump rather than animate.
     window.scrollTo({ top: 0 });
-    setShowingWelcome(false);
+    if (showingWelcome) {
+      setShowingWelcome(false);
+      setView("feed");
+    }
     void graphExplorer.openRun(runId);
   };
 
   const isGraphPage = !showingWelcome && graphExplorer.selection !== null;
-  const hideContinueButton =
-    (query.length > 0 && searchFocused) || matches.length > 0;
-  const hideSurfacedMemories =
-    searchFocused || matches.length > 0 || searchStatus !== "";
+  const pageKey = showingWelcome ? "welcome" : isGraphPage ? "graph" : view;
+  const backLabel =
+    graphExplorer.selection?.kind !== "run" && view === "search"
+      ? "← back to results"
+      : "← back";
 
   return (
     <PageTransition
       appear={false}
       className="authenticated-page-transition"
-      pageKey={showingWelcome ? "welcome" : isGraphPage ? "graph" : "landing"}
+      pageKey={pageKey}
       onSwitched={(transitionKey) => {
-        if (transitionKey !== "landing" || !restoreResultsFocusRef.current) {
+        if (transitionKey === "entry") {
+          textareaRef.current?.focus({ preventScroll: true });
+          return;
+        }
+        if (transitionKey === "search" && !restoreResultsFocusRef.current) {
+          searchInputRef.current?.focus();
+          return;
+        }
+        if (transitionKey === "graph" || !restoreResultsFocusRef.current) {
           return;
         }
         restoreResultsFocusRef.current = false;
-        // Focusing an empty search would hide surfaced memories, so only
-        // return there when search feedback is already being shown.
-        const showingSearch = matches.length > 0 || searchStatus !== "";
         (
           selectedButtonRef.current ??
-          (showingSearch ? searchInputRef.current : null)
+          (transitionKey === "search" ? searchInputRef.current : null)
         )?.focus();
       }}
     >
       <main className={`page-stack${isGraphPage ? " is-graph-page" : ""}`}>
-      <SessionMenu onLogout={onLogout} onShowWorkspaces={showAllWorkspaces} />
+      <SessionMenu
+        onLogout={onLogout}
+        onShowWorkspaces={showAllWorkspaces}
+        actions={
+          showingWelcome ? undefined : (
+            <>
+              {(isGraphPage || view !== "search") && (
+                <TextButton size="s" onClick={() => showView("search")}>
+                  <svg
+                    className="text-button-icon"
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle cx="11" cy="11" r="6.5" />
+                    <path d="m16 16 4 4" />
+                  </svg>
+                  search
+                </TextButton>
+              )}
+              {canWrite && (isGraphPage || view !== "entry") && (
+                <TextButton size="s" onClick={() => showView("entry")}>
+                  <svg
+                    className="text-button-icon"
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  add a memory
+                </TextButton>
+              )}
+            </>
+          )
+        }
+      />
+      {!showingWelcome && !isGraphPage && view !== "feed" && (
+        <div className="page-back">
+          <TextButton size="s" onClick={() => showView("feed")}>
+            ← back
+          </TextButton>
+        </div>
+      )}
       {showingWelcome ? (
         <WorkspaceWelcome
           selfNodeId={newWorkspace?.selfNodeId ?? null}
           onAddMemories={canWrite ? openEntry : undefined}
         />
-      ) : (
-      <section className="landing screen" aria-labelledby="search-title">
-        <div className="search-wrap">
-          <h1 id="search-title" className="sr-only">
-            Search your headspace
-          </h1>
-          {!isGraphPage && (
-            <SurfacedMemories
-              hidden={hideSurfacedMemories}
-              onOpenNode={openSurfacedMemory}
+      ) : isGraphPage || view === "search" ? (
+        <section className="landing screen" aria-labelledby="search-title">
+          <div className="search-wrap">
+            <h1 id="search-title" className="sr-only">
+              Search your headspace
+            </h1>
+            {!isGraphPage && (
+              <SearchInterface
+                inputRef={searchInputRef}
+                query={query}
+                searching={searching}
+                onQueryChange={handleQueryChange}
+                onSearch={() => void handleSearch()}
+              />
+            )}
+            <ResultInterface
+              backLabel={backLabel}
+              expandNotice={graphExplorer.expandNotice}
+              graph={graphExplorer.graph}
+              graphLoading={graphExplorer.loading}
+              graphSelection={graphExplorer.selection}
+              graphStatus={graphExplorer.status}
+              graphStatusIsError={graphExplorer.statusIsError}
+              expandNoticeIsError={graphExplorer.expandNoticeIsError}
+              matches={matches}
+              searchStatus={searchStatus}
+              searchStatusIsError={searchStatusIsError}
+              selectedButtonRef={selectedButtonRef}
+              selectedNodeIdRef={selectedNodeIdRef}
+              onBack={backFromGraph}
+              onExpandNode={(selection) => void graphExplorer.expand(selection)}
+              onOpenNode={openNode}
             />
-          )}
-          {!isGraphPage && (
-            <SearchInterface
-              inputRef={searchInputRef}
-              query={query}
-              searching={searching}
-              onQueryChange={handleQueryChange}
-              onFocusChange={setSearchFocused}
-              onSearch={() => void handleSearch()}
-            />
-          )}
-          <ResultInterface
-            expandNotice={graphExplorer.expandNotice}
-            graph={graphExplorer.graph}
-            graphLoading={graphExplorer.loading}
-            graphSelection={graphExplorer.selection}
-            graphStatus={graphExplorer.status}
-            graphStatusIsError={graphExplorer.statusIsError}
-            expandNoticeIsError={graphExplorer.expandNoticeIsError}
-            matches={matches}
-            searchStatus={searchStatus}
-            searchStatusIsError={searchStatusIsError}
-            selectedButtonRef={selectedButtonRef}
-            selectedNodeIdRef={selectedNodeIdRef}
-            onBack={backToResults}
-            onExpandNode={(selection) => void graphExplorer.expand(selection)}
-            onOpenNode={openNode}
-          />
-        </div>
-
-        {!isGraphPage && canWrite && (
-          <div className="continue-wrap">
-            <TextButton
-              className={`continue-button${hideContinueButton ? " is-search-active" : ""}`}
-              aria-hidden={hideContinueButton ? true : undefined}
-              tabIndex={hideContinueButton ? -1 : undefined}
-              onClick={openEntry}
-            >
-              add a thought&nbsp; ↓
-            </TextButton>
           </div>
-        )}
-      </section>
-      )}
+        </section>
+      ) : view === "feed" ? (
+        <section className="landing screen" aria-labelledby="feed-title">
+          <div className="search-wrap">
+            <h1 id="feed-title" className="sr-only">
+              Your headspace
+            </h1>
+            <SurfacedMemories onOpenNode={openSurfacedMemory} />
+          </div>
+        </section>
+      ) : null}
 
+      {/* Always mounted so pending submissions and their notifications
+          outlive the entry page. */}
       {canWrite && (
         <TextEntryInterface
           sectionRef={entrySectionRef}
           textareaRef={textareaRef}
+          formHidden={!showingWelcome && (isGraphPage || view !== "entry")}
           prompt={showingWelcome ? "What’s this headspace for?" : undefined}
           onViewRun={viewRun}
         />

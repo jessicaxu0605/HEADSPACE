@@ -6,7 +6,6 @@ type SearchInterfaceProps = {
   query: string;
   searching: boolean;
   onQueryChange: (query: string) => void;
-  onFocusChange: (focused: boolean) => void;
   onSearch: () => void;
 };
 
@@ -15,7 +14,6 @@ export default function SearchInterface({
   query,
   searching,
   onQueryChange,
-  onFocusChange,
   onSearch,
 }: SearchInterfaceProps) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
@@ -43,8 +41,6 @@ export default function SearchInterface({
         autoComplete="off"
         value={query}
         onValueChange={onQueryChange}
-        onFocus={() => onFocusChange(true)}
-        onBlur={() => onFocusChange(false)}
       />
     </form>
   );

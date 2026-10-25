@@ -21,6 +21,9 @@ type TextEntryInterfaceProps = {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   // Replaces the random starter prompt, e.g. to ask for a new workspace's context.
   prompt?: string;
+  // Hides the form but keeps submissions and their notifications going, for
+  // pages other than the entry page.
+  formHidden?: boolean;
   onViewRun: (runId: string) => void;
 };
 
@@ -62,6 +65,7 @@ export default function TextEntryInterface({
   sectionRef,
   textareaRef,
   prompt,
+  formHidden = false,
   onViewRun,
 }: TextEntryInterfaceProps) {
   const { workspace } = useWorkspace();
@@ -172,40 +176,42 @@ export default function TextEntryInterface({
     <section
       ref={sectionRef}
       id="entry"
-      className="entry screen"
+      className={`entry${formHidden ? "" : " screen"}`}
       aria-label="Add a thought"
     >
-      <PresenceTransition
-        enter="fade-up"
-        exit="fade-up"
-        visible
-      >
-        <form className="ingestion-form" onSubmit={handleSubmit}>
-          <AutoGrowingTextArea
-            textareaRef={textareaRef}
-            value={content}
-            onValueChange={setContent}
-            ariaLabel="Your thought"
-            emptyPrompt={prompt ?? starterPrompt}
-            id="content"
-            name="content"
-            required
-          />
-          <PresenceTransition
-            enter="fade-up"
-            enterDelay={submitRevealDelayMs}
-            enterDuration={motionDurations.page}
-            exit="fade-up"
-            exitDuration={motionDurations.standard}
-            unmountOnExit={false}
-            visible={hasText}
-          >
-            <TextButton className="ingestion-submit" type="submit">
-              remember this&nbsp; →
-            </TextButton>
-          </PresenceTransition>
-        </form>
-      </PresenceTransition>
+      {!formHidden && (
+        <PresenceTransition
+          enter="fade-up"
+          exit="fade-up"
+          visible
+        >
+          <form className="ingestion-form" onSubmit={handleSubmit}>
+            <AutoGrowingTextArea
+              textareaRef={textareaRef}
+              value={content}
+              onValueChange={setContent}
+              ariaLabel="Your thought"
+              emptyPrompt={prompt ?? starterPrompt}
+              id="content"
+              name="content"
+              required
+            />
+            <PresenceTransition
+              enter="fade-up"
+              enterDelay={submitRevealDelayMs}
+              enterDuration={motionDurations.page}
+              exit="fade-up"
+              exitDuration={motionDurations.standard}
+              unmountOnExit={false}
+              visible={hasText}
+            >
+              <TextButton className="ingestion-submit" type="submit">
+                remember this&nbsp; →
+              </TextButton>
+            </PresenceTransition>
+          </form>
+        </PresenceTransition>
+      )}
       <div className="notification-stack" aria-live="polite">
         {notifications.map((notification) => (
           <PresenceTransition
