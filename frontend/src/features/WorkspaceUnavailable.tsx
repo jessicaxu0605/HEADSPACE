@@ -23,7 +23,7 @@ export default function WorkspaceUnavailable({
           {error ? "Couldn’t open your headspace" : "No headspace yet"}
         </h1>
         <p className="workspace-unavailable-message" role={error ? "alert" : undefined}>
-          {error ?? "This account isn’t a member of any workspace."}
+          {error ?? "This account isn’t a member of any space."}
         </p>
         <div className="auth-entry-actions">
           {onRetry && (

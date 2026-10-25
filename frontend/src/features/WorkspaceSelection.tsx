@@ -81,7 +81,7 @@ export default function WorkspaceSelection({
             >
               <div className="workspace-selection-card workspace-selection-new">
                 <TextButton onClick={() => setAddingWorkspace(true)}>
-                  + new workspace
+                  + new space
                 </TextButton>
               </div>
             </PresenceTransition>

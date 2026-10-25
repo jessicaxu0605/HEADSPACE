@@ -69,7 +69,7 @@ export default function SessionMenu({
         >
           {onShowWorkspaces && (
             <TextButton onClick={() => choose(onShowWorkspaces)}>
-              all workspaces
+              all spaces
             </TextButton>
           )}
           <TextButton onClick={() => choose(onLogout)}>log out</TextButton>

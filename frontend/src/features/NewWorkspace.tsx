@@ -47,7 +47,7 @@ export default function NewWorkspace({ onCreate, onBack, onLogout }: NewWorkspac
         >
           <div className="auth-signup-fields">
             <ValidatedTextField
-              aria-label="Workspace name"
+              aria-label="Space name"
               placeholder="name"
               maxLength={200}
               value={name}
@@ -67,7 +67,7 @@ export default function NewWorkspace({ onCreate, onBack, onLogout }: NewWorkspac
               onCheckedChange={setCreateSelfNode}
               disabled={creating}
             >
-              add me to this headspace
+              add me to this space
             </Checkbox>
           </div>
           <div className="auth-signup-actions">
