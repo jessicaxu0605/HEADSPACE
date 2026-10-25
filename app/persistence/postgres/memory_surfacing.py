@@ -1,10 +1,10 @@
 """PostgreSQL surfacing sources and subgraph expansion for the landing page.
 
-Each source is a small dataclass with its own knobs and one query. Add, remove,
-or reorder sources by editing the ``SourceConfig`` list passed to
-``PostgresMemorySurfacingStore.surface_memories``; ``DEFAULT_LANDING_SOURCES``
-is the starting mix. A source returns anchors only; expansion into the card's
-subgraph is shared and does not depend on which source chose the anchor.
+Each source is a small dataclass with its own knobs and one normalized query.
+The enabled queries are combined with ``UNION ALL`` for one discovery round
+trip, then redistributed to their source configs for ranking. Add, remove, or
+reorder sources in ``DEFAULT_UPCOMING_SOURCES`` and ``DEFAULT_LANDING_SOURCES``;
+expansion into the card's subgraph is shared and independent of the source.
 
 Upcoming items are surfaced separately by ``surface_upcoming``: unfinished
 tasks and events in the next two weeks, in date order, each with only its
@@ -15,6 +15,7 @@ evidence, and related-edge expansion.
 from __future__ import annotations
 
 import random
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -23,6 +24,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from app.graph.queries.memory_surfacing import (
+    DiscoveryQuery,
     EdgeRole,
     ExpansionConfig,
     RankedAnchor,
@@ -35,8 +37,6 @@ from app.graph.queries.memory_surfacing import (
     SurfacingContext,
     SurfacingSource,
     rank_anchors,
-    recency_decay,
-    relative_days,
 )
 from app.persistence.postgres.connection import get_async_connection
 from app.search.edge_projection import EDGE_PROJECTION_VERSION
@@ -129,12 +129,69 @@ def _local_today(ctx: SurfacingContext) -> date:
     return ctx.now.astimezone(ZoneInfo(ctx.timezone)).date()
 
 
-def _local_date(ctx: SurfacingContext, value: datetime) -> date:
-    return value.astimezone(ZoneInfo(ctx.timezone)).date()
+def _relative_days_sql(offset: str) -> str:
+    """SQL expression equivalent of ``relative_days`` for a day offset."""
+
+    return f"""
+        CASE
+            WHEN {offset} = 0 THEN 'today'
+            WHEN {offset} = 1 THEN 'tomorrow'
+            WHEN {offset} = -1 THEN 'yesterday'
+            WHEN {offset} > 0 THEN 'in ' || {offset} || ' days'
+            ELSE (-({offset})) || ' days ago'
+        END
+    """
 
 
-def _years(count: int) -> str:
-    return f"{count} year{'s' if count != 1 else ''}"
+async def _fetch_discovery_batches(
+    conn: Any, queries: Sequence[DiscoveryQuery]
+) -> list[list[SurfaceAnchor]]:
+    """Execute modular discovery queries as one UNION and restore their batches."""
+
+    if not queries:
+        return []
+
+    branches: list[str] = []
+    combined_params: dict[str, Any] = {}
+    for index, query in enumerate(queries):
+        prefix = f"source_{index}_"
+
+        def namespace(match: re.Match[str]) -> str:
+            return f"%({prefix}{match.group(1)})s"
+
+        sql = re.sub(r"%\(([^)]+)\)s", namespace, query.sql)
+        branches.append(
+            f"""
+            SELECT
+                {index}::integer AS source_index,
+                q.anchor_kind,
+                q.anchor_id,
+                q.score,
+                q.note,
+                q.anchor_date
+            FROM ({sql}) AS q
+            """
+        )
+        combined_params.update(
+            {f"{prefix}{name}": value for name, value in query.params.items()}
+        )
+
+    cursor = await conn.execute("\nUNION ALL\n".join(branches), combined_params)
+    batches: list[list[SurfaceAnchor]] = [[] for _ in queries]
+    for row in await cursor.fetchall():
+        index = row["source_index"]
+        query = queries[index]
+        batches[index].append(
+            SurfaceAnchor(
+                kind=row["anchor_kind"],
+                id=row["anchor_id"],
+                reason=query.source_name,
+                score=row["score"],
+                note=row["note"],
+                when=row["anchor_date"],
+            )
+        )
+    return batches
 
 
 # --- Sources -----------------------------------------------------------------
@@ -154,10 +211,11 @@ class OpenTasks:
     # Due dates this far out score as low as undated tasks.
     horizon_days: int = 14
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
-        cursor = await conn.execute(
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
+        offset = "tasks.due_date - %(today)s"
+        due_note = _relative_days_sql(offset)
+        return DiscoveryQuery(
+            self.name,
             f"""
             WITH tasks AS (
                 SELECT
@@ -193,45 +251,51 @@ class OpenTasks:
                       IN ('todo', 'in_progress', 'blocked')
                   AND n.type_specific->>'completed_at' IS NULL
             )
-            SELECT id, created_at, urgency, task_status, due_date
+            SELECT
+                'node'::text AS anchor_kind,
+                tasks.id AS anchor_id,
+                LEAST(
+                    GREATEST(
+                        CASE
+                            WHEN tasks.due_date IS NULL THEN 0.3
+                            WHEN tasks.due_date < %(today)s THEN 1.0
+                            ELSE GREATEST(
+                                0.3,
+                                0.95 - 0.65 * ({offset}) / %(horizon_days)s
+                            )
+                        END
+                        + CASE tasks.urgency
+                            WHEN 'high' THEN 0.2
+                            WHEN 'low' THEN -0.1
+                            ELSE 0
+                        END
+                        - CASE WHEN tasks.task_status = 'blocked' THEN 0.1 ELSE 0 END,
+                        0
+                    ),
+                    1
+                )::double precision AS score,
+                CASE
+                    WHEN tasks.due_date IS NULL THEN
+                        CASE WHEN tasks.task_status = 'blocked' THEN 'blocked' END
+                    WHEN tasks.due_date < %(today)s THEN
+                        'overdue by ' || (-({offset})) || ' day'
+                        || CASE WHEN {offset} <> -1 THEN 's' ELSE '' END
+                    ELSE 'due ' || ({due_note})
+                END AS note,
+                tasks.due_date AS anchor_date
             FROM tasks
-            WHERE due_date IS NOT NULL
-               OR created_at >= %(now)s - %(stale_after)s
-            ORDER BY due_date NULLS LAST, created_at DESC
+            WHERE tasks.due_date IS NOT NULL
+               OR tasks.created_at >= %(now)s - %(stale_after)s
+            ORDER BY tasks.due_date NULLS LAST, tasks.created_at DESC
             LIMIT %(limit)s
             """,
-            _params(ctx, limit, stale_after=self.stale_after),
+            _params(
+                ctx,
+                limit,
+                stale_after=self.stale_after,
+                horizon_days=self.horizon_days,
+            ),
         )
-        rows = await cursor.fetchall()
-
-        today = _local_today(ctx)
-        anchors = []
-        for row in rows:
-            note = "blocked" if row["task_status"] == "blocked" else None
-            if row["due_date"] is None:
-                score = 0.3
-            else:
-                offset = (row["due_date"] - today).days
-                if offset < 0:
-                    score = 1.0
-                    note = f"overdue by {-offset} day{'s' if offset != -1 else ''}"
-                else:
-                    score = max(0.3, 0.95 - 0.65 * offset / self.horizon_days)
-                    note = f"due {relative_days(offset)}"
-            score += {"high": 0.2, "low": -0.1}.get(row["urgency"] or "", 0)
-            if row["task_status"] == "blocked":
-                score -= 0.1
-            anchors.append(
-                SurfaceAnchor(
-                    "node",
-                    row["id"],
-                    self.name,
-                    min(max(score, 0), 1),
-                    note,
-                    when=row["due_date"],
-                )
-            )
-        return anchors
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,11 +308,13 @@ class UpcomingEvents:
     name: str = "upcoming_events"
     horizon_days: int = 14
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
-        cursor = await conn.execute(
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
+        offset = "events.start_date - %(today)s"
+        relative = _relative_days_sql(offset)
+        return DiscoveryQuery(
+            self.name,
             f"""
+            WITH events AS (
             SELECT n.id, min(x.start_date) AS start_date
             FROM memory_node AS n
             JOIN memory_edge AS e
@@ -279,27 +345,23 @@ class UpcomingEvents:
             GROUP BY n.workspace_id, n.id
             ORDER BY start_date, n.id
             LIMIT %(limit)s
+            )
+            SELECT
+                'node'::text AS anchor_kind,
+                events.id AS anchor_id,
+                GREATEST(
+                    0.3,
+                    0.95 - 0.65 * GREATEST({offset}, 0) / %(horizon_days)s
+                )::double precision AS score,
+                CASE
+                    WHEN {offset} < 0 THEN 'happening now'
+                    ELSE {relative}
+                END AS note,
+                GREATEST(events.start_date, %(today)s) AS anchor_date
+            FROM events
             """,
             _params(ctx, limit, horizon_days=self.horizon_days),
         )
-        rows = await cursor.fetchall()
-
-        today = _local_today(ctx)
-        anchors = []
-        for row in rows:
-            offset = (row["start_date"] - today).days
-            note = "happening now" if offset < 0 else relative_days(offset)
-            anchors.append(
-                SurfaceAnchor(
-                    "node",
-                    row["id"],
-                    self.name,
-                    max(0.3, 0.95 - 0.65 * max(offset, 0) / self.horizon_days),
-                    note,
-                    when=max(row["start_date"], today),
-                )
-            )
-        return anchors
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,9 +382,7 @@ class OnThisDay:
     # Deadlines are already surfaced by OpenTasks.
     exclude_relations: tuple[str, ...] = ("due_on", "scheduled_for")
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
         today = _local_today(ctx)
         # The anniversary nearest today among last, this, and next year, so
         # a window around New Year still matches.
@@ -330,7 +390,14 @@ class OnThisDay:
             "(dates.dv + make_interval(years => "
             "%(year)s - extract(year FROM dates.dv)::int + k))::date"
         )
-        cursor = await conn.execute(
+        offset = "deduplicated.anniversary - %(today)s"
+        relative = _relative_days_sql(offset)
+        years_ago = (
+            "extract(year FROM deduplicated.anniversary)::int "
+            "- extract(year FROM deduplicated.dv)::int"
+        )
+        return DiscoveryQuery(
+            self.name,
             f"""
             WITH dates AS (
                 SELECT d.id AS date_node_id, x.dv
@@ -359,12 +426,19 @@ class OnThisDay:
                 WHERE best.anniversary - %(today)s
                       BETWEEN -%(lookback_days)s AND %(lookahead_days)s
                   AND best.anniversary >= dates.dv
-            )
+            ),
+            raw AS (
             SELECT
                 e.id AS edge_id,
                 r.name AS relation_type,
                 hits.dv,
-                hits.anniversary
+                hits.anniversary,
+                row_number() OVER (
+                    ORDER BY
+                        abs(hits.anniversary - %(today)s),
+                        e.strength * e.confidence DESC,
+                        e.id
+                ) AS source_order
             FROM hits
             JOIN memory_edge AS e
               ON e.workspace_id = %(workspace_id)s
@@ -380,6 +454,41 @@ class OnThisDay:
                 e.strength * e.confidence DESC,
                 e.id
             LIMIT %(limit)s
+            ),
+            deduplicated AS (
+                SELECT DISTINCT ON (raw.edge_id) raw.*
+                FROM raw
+                WHERE NOT (
+                    %(skip_upcoming_events)s
+                    AND raw.relation_type = 'occurs_on'
+                    AND extract(year FROM raw.anniversary)::int
+                        - extract(year FROM raw.dv)::int = 0
+                )
+                ORDER BY raw.edge_id, raw.source_order
+            )
+            SELECT
+                'edge'::text AS anchor_kind,
+                deduplicated.edge_id AS anchor_id,
+                (
+                    1 - abs({offset})::double precision
+                        / %(score_window)s
+                )::double precision AS score,
+                CASE
+                    WHEN deduplicated.relation_type = 'born_on' THEN
+                        'birthday ' || ({relative})
+                    WHEN {years_ago} > 0 THEN
+                        ({years_ago}) || ' year'
+                        || CASE WHEN {years_ago} <> 1 THEN 's' ELSE '' END
+                        || ' ago'
+                        || CASE
+                            WHEN {offset} = 0 THEN ' today'
+                            ELSE ' (' || ({relative}) || ')'
+                        END
+                    ELSE {relative}
+                END AS note,
+                NULL::date AS anchor_date
+            FROM deduplicated
+            ORDER BY deduplicated.source_order
             """,
             _params(
                 ctx,
@@ -388,36 +497,10 @@ class OnThisDay:
                 lookback_days=self.lookback_days,
                 lookahead_days=self.lookahead_days,
                 exclude_relations=list(self.exclude_relations),
+                skip_upcoming_events=self.skip_upcoming_events,
+                score_window=max(self.lookback_days, self.lookahead_days) + 1,
             ),
         )
-        rows = await cursor.fetchall()
-
-        anchors: dict[UUID, SurfaceAnchor] = {}
-        for row in rows:
-            offset = (row["anniversary"] - today).days
-            years_ago = row["anniversary"].year - row["dv"].year
-            if (
-                self.skip_upcoming_events
-                and row["relation_type"] == "occurs_on"
-                and years_ago == 0
-            ):
-                continue
-            if row["relation_type"] == "born_on":
-                note = f"birthday {relative_days(offset)}"
-            elif years_ago > 0:
-                note = f"{_years(years_ago)} ago" + (
-                    " today" if offset == 0 else f" ({relative_days(offset)})"
-                )
-            else:
-                note = relative_days(offset)
-            score = 1 - abs(offset) / (
-                max(self.lookback_days, self.lookahead_days) + 1
-            )
-            anchors.setdefault(
-                row["edge_id"],
-                SurfaceAnchor("edge", row["edge_id"], self.name, score, note),
-            )
-        return list(anchors.values())
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,11 +512,11 @@ class SourceAnniversaries:
 
     name: str = "source_anniversary"
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
         today = _local_today(ctx)
-        cursor = await conn.execute(
+        years_ago = "%(year)s - extract(year FROM edges.local_date)::int"
+        return DiscoveryQuery(
+            self.name,
             f"""
             WITH sources AS (
                 SELECT s.id, (x.at AT TIME ZONE %(tz)s)::date AS local_date
@@ -466,24 +549,25 @@ class SourceAnniversaries:
                 WHERE {_NOT_EXCLUDED_EDGE}
                 ORDER BY e.id, sources.local_date
             )
-            SELECT edge_id, local_date, strength, confidence
+            SELECT
+                'edge'::text AS anchor_kind,
+                edge_id AS anchor_id,
+                (0.5 + 0.5 * strength * confidence)::double precision AS score,
+                ({years_ago}) || ' year'
+                    || CASE WHEN {years_ago} <> 1 THEN 's' ELSE '' END
+                    || ' ago today' AS note,
+                NULL::date AS anchor_date
             FROM edges
             ORDER BY strength * confidence DESC, edge_id
             LIMIT %(limit)s
             """,
-            _params(ctx, limit, month_day=today.strftime("%m-%d")),
+            _params(
+                ctx,
+                limit,
+                month_day=today.strftime("%m-%d"),
+                year=today.year,
+            ),
         )
-        rows = await cursor.fetchall()
-        return [
-            SurfaceAnchor(
-                "edge",
-                row["edge_id"],
-                self.name,
-                0.5 + 0.5 * row["strength"] * row["confidence"],
-                f"{_years(today.year - row['local_date'].year)} ago today",
-            )
-            for row in rows
-        ]
 
 
 @dataclass(frozen=True, slots=True)
@@ -493,11 +577,13 @@ class EdgeValidityChanges:
     name: str = "starting_or_ending"
     window: timedelta = timedelta(days=7)
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
-        cursor = await conn.execute(
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
+        offset = "(selected.boundary AT TIME ZONE %(tz)s)::date - %(today)s"
+        relative = _relative_days_sql(offset)
+        return DiscoveryQuery(
+            self.name,
             f"""
+            WITH edges AS (
             SELECT e.id AS edge_id, e.valid_from, e.valid_to
             FROM memory_edge AS e
             {_LIVE_ENDPOINTS}
@@ -515,32 +601,42 @@ class EdgeValidityChanges:
                 ),
                 e.id
             LIMIT %(limit)s
+            ),
+            selected AS (
+                SELECT edges.edge_id, boundary.verb, boundary.at AS boundary
+                FROM edges
+                CROSS JOIN LATERAL (
+                    SELECT candidate.verb, candidate.at
+                    FROM (VALUES
+                        ('start'::text, edges.valid_from),
+                        ('end'::text, edges.valid_to)
+                    ) AS candidate(verb, at)
+                    WHERE candidate.at IS NOT NULL
+                      AND abs(extract(epoch FROM candidate.at - %(now)s))
+                          <= extract(epoch FROM %(window)s::interval)
+                    ORDER BY abs(extract(epoch FROM candidate.at - %(now)s))
+                    LIMIT 1
+                ) AS boundary
+            )
+            SELECT
+                'edge'::text AS anchor_kind,
+                selected.edge_id AS anchor_id,
+                GREATEST(
+                    1 - abs(extract(epoch FROM selected.boundary - %(now)s))
+                        / extract(epoch FROM %(window)s::interval),
+                    0
+                )::double precision AS score,
+                selected.verb
+                    || CASE
+                        WHEN selected.boundary > %(now)s THEN 's '
+                        ELSE 'ed '
+                    END
+                    || ({relative}) AS note,
+                NULL::date AS anchor_date
+            FROM selected
             """,
             _params(ctx, limit, window=self.window),
         )
-        rows = await cursor.fetchall()
-
-        anchors = []
-        for row in rows:
-            boundaries = [
-                (verb, value)
-                for verb, value in (("start", row["valid_from"]), ("end", row["valid_to"]))
-                if value is not None and abs(value - ctx.now) <= self.window
-            ]
-            verb, boundary = min(boundaries, key=lambda item: abs(item[1] - ctx.now))
-            offset = (_local_date(ctx, boundary) - _local_today(ctx)).days
-            tense = f"{verb}s" if boundary > ctx.now else f"{verb}ed"
-            score = 1 - abs(boundary - ctx.now) / self.window
-            anchors.append(
-                SurfaceAnchor(
-                    "edge",
-                    row["edge_id"],
-                    self.name,
-                    max(score, 0),
-                    f"{tense} {relative_days(offset)}",
-                )
-            )
-        return anchors
 
 
 @dataclass(frozen=True, slots=True)
@@ -555,11 +651,13 @@ class RecentEdges:
     window: timedelta = timedelta(days=7)
     half_life: timedelta = timedelta(days=2)
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
-        cursor = await conn.execute(
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
+        offset = "(recent.changed_at AT TIME ZONE %(tz)s)::date - %(today)s"
+        relative = _relative_days_sql(offset)
+        return DiscoveryQuery(
+            self.name,
             f"""
+            WITH recent AS (
             SELECT
                 e.id AS edge_id,
                 max(c.created_at) AS changed_at,
@@ -580,30 +678,27 @@ class RecentEdges:
             GROUP BY e.workspace_id, e.id
             ORDER BY changed_at DESC, e.id
             LIMIT %(limit)s
-            """,
-            _params(ctx, limit, window=self.window),
-        )
-        rows = await cursor.fetchall()
-
-        today = _local_today(ctx)
-        anchors = []
-        for row in rows:
-            age = ctx.now - row["changed_at"]
-            score = recency_decay(
-                age.total_seconds() / 3600, self.half_life.total_seconds() / 3600
-            ) * (0.5 + 0.5 * row["strength"] * row["confidence"])
-            offset = (_local_date(ctx, row["changed_at"]) - today).days
-            verb = "added" if row["created"] else "updated"
-            anchors.append(
-                SurfaceAnchor(
-                    "edge",
-                    row["edge_id"],
-                    self.name,
-                    score,
-                    f"{verb} {relative_days(offset)}",
-                )
             )
-        return anchors
+            SELECT
+                'edge'::text AS anchor_kind,
+                recent.edge_id AS anchor_id,
+                (
+                    power(
+                        0.5,
+                        GREATEST(
+                            extract(epoch FROM %(now)s - recent.changed_at),
+                            0
+                        ) / extract(epoch FROM %(half_life)s::interval)
+                    )
+                    * (0.5 + 0.5 * recent.strength * recent.confidence)
+                )::double precision AS score,
+                CASE WHEN recent.created THEN 'added ' ELSE 'updated ' END
+                    || ({relative}) AS note,
+                NULL::date AS anchor_date
+            FROM recent
+            """,
+            _params(ctx, limit, window=self.window, half_life=self.half_life),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -617,11 +712,11 @@ class RandomEdges:
     vague_relation_weight: float = 0.3
     no_evidence_weight: float = 0.5
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
-        cursor = await conn.execute(
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
+        return DiscoveryQuery(
+            self.name,
             f"""
+            WITH sampled AS (
             SELECT e.id AS edge_id, x.weight
             FROM memory_edge AS e
             JOIN relation_type AS r ON r.id = e.relation_type_id
@@ -644,6 +739,16 @@ class RandomEdges:
               AND {_NOT_EXCLUDED_EDGE}
             ORDER BY power(random(), 1.0 / x.weight) DESC
             LIMIT %(limit)s
+            )
+            SELECT
+                'edge'::text AS anchor_kind,
+                sampled.edge_id AS anchor_id,
+                (
+                    sampled.weight / NULLIF(max(sampled.weight) OVER (), 0)
+                )::double precision AS score,
+                NULL::text AS note,
+                NULL::date AS anchor_date
+            FROM sampled
             """,
             _params(
                 ctx,
@@ -653,8 +758,6 @@ class RandomEdges:
                 no_evidence_weight=self.no_evidence_weight,
             ),
         )
-        rows = await cursor.fetchall()
-        return _normalized_random_anchors(rows, "edge", "edge_id", self.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -670,10 +773,9 @@ class RandomNodes:
     # crowd out everything else.
     degree_cap: int = 12
 
-    async def fetch(
-        self, conn: Any, ctx: SurfacingContext, limit: int
-    ) -> list[SurfaceAnchor]:
-        cursor = await conn.execute(
+    def discovery_query(self, ctx: SurfacingContext, limit: int) -> DiscoveryQuery:
+        return DiscoveryQuery(
+            self.name,
             f"""
             WITH degree AS (
                 SELECT node_id, count(*) AS degree
@@ -687,7 +789,8 @@ class RandomNodes:
                     WHERE workspace_id = %(workspace_id)s AND deleted_at IS NULL
                 ) AS endpoints
                 GROUP BY node_id
-            )
+            ),
+            sampled AS (
             SELECT n.id AS node_id, x.weight
             FROM memory_node AS n
             JOIN degree ON degree.node_id = n.id
@@ -708,6 +811,16 @@ class RandomNodes:
               AND NOT (n.id = ANY(%(exclude_node_ids)s::uuid[]))
             ORDER BY power(random(), 1.0 / x.weight) DESC
             LIMIT %(limit)s
+            )
+            SELECT
+                'node'::text AS anchor_kind,
+                sampled.node_id AS anchor_id,
+                (
+                    sampled.weight / NULLIF(max(sampled.weight) OVER (), 0)
+                )::double precision AS score,
+                NULL::text AS note,
+                NULL::date AS anchor_date
+            FROM sampled
             """,
             _params(
                 ctx,
@@ -718,18 +831,6 @@ class RandomNodes:
                 degree_cap=self.degree_cap,
             ),
         )
-        rows = await cursor.fetchall()
-        return _normalized_random_anchors(rows, "node", "node_id", self.name)
-
-
-def _normalized_random_anchors(
-    rows: Sequence[dict[str, Any]], kind: str, id_column: str, name: str
-) -> list[SurfaceAnchor]:
-    top = max((row["weight"] for row in rows), default=1) or 1
-    return [
-        SurfaceAnchor(kind, row[id_column], name, row["weight"] / top)  # type: ignore[arg-type]
-        for row in rows
-    ]
 
 
 DEFAULT_UPCOMING_SOURCES: tuple[SurfacingSource, ...] = (
@@ -750,7 +851,133 @@ DEFAULT_LANDING_SOURCES: tuple[SourceConfig, ...] = (
 # --- Store and subgraph expansion --------------------------------------------
 
 
+async def _expand_upcoming(
+    conn: Any,
+    ctx: SurfacingContext,
+    batches: Sequence[Sequence[SurfaceAnchor]],
+    *,
+    limit: int,
+    adjacent_edges: int,
+) -> list[SurfacedMemory]:
+    anchors = [anchor for batch in batches for anchor in batch]
+    anchors.sort(
+        key=lambda anchor: (
+            anchor.when is None,
+            anchor.when or date.max,
+            -anchor.score,
+        )
+    )
+
+    upcoming = []
+    for anchor in anchors[:limit]:
+        edges = await _context_edges(
+            conn,
+            ctx,
+            [anchor.id],
+            exclude_edge_ids=[],
+            limit=adjacent_edges,
+        )
+        nodes = await _load_nodes(conn, ctx, {anchor.id} | _endpoints(edges))
+        nodes.sort(key=lambda node: (node.node_id != anchor.id, node.title.casefold()))
+        upcoming.append(SurfacedMemory(anchor, True, nodes, edges))
+    return upcoming
+
+
+async def _expand_ranked(
+    conn: Any,
+    ctx: SurfacingContext,
+    sources: Sequence[SourceConfig],
+    batches: Sequence[Sequence[SurfaceAnchor]],
+    *,
+    max_cards: int,
+    expansion: ExpansionConfig,
+    rng: random.Random | None,
+    shown_node_ids: set[UUID] | None = None,
+    shown_edge_ids: set[UUID] | None = None,
+) -> list[SurfacedMemory]:
+    ranked = rank_anchors(list(zip(sources, batches)), rng=rng)
+    memories: list[SurfacedMemory] = []
+    shown_node_ids = set(shown_node_ids or ())
+    shown_edge_ids = set(shown_edge_ids or ())
+    taken_by_source: dict[int, int] = {}
+    unpinned = 0
+    for item in ranked:
+        if not item.pinned:
+            if unpinned >= max_cards:
+                break
+            limit = sources[item.source_index].limit
+            if taken_by_source.get(item.source_index, 0) >= limit:
+                continue
+            # Sources often land on the same subgraph; the highest-ranked card
+            # owns an anchor already shown by upcoming or an earlier memory.
+            shown = shown_edge_ids if item.anchor.kind == "edge" else shown_node_ids
+            if item.anchor.id in shown:
+                continue
+        memory = await _expand(conn, ctx, item, expansion, shown_edge_ids)
+        if memory is None:
+            continue
+        memories.append(memory)
+        shown_node_ids |= {node.node_id for node in memory.nodes}
+        shown_edge_ids |= {edge.edge_id for edge in memory.edges}
+        if not item.pinned:
+            taken_by_source[item.source_index] = (
+                taken_by_source.get(item.source_index, 0) + 1
+            )
+            unpinned += 1
+    return memories
+
+
 class PostgresMemorySurfacingStore:
+    async def surface_landing(
+        self,
+        *,
+        ctx: SurfacingContext,
+        max_upcoming: int = 8,
+        max_cards: int = 6,
+        upcoming_sources: Sequence[SurfacingSource] = DEFAULT_UPCOMING_SOURCES,
+        memory_sources: Sequence[SourceConfig] = DEFAULT_LANDING_SOURCES,
+        adjacent_edges: int = 4,
+        expansion: ExpansionConfig = ExpansionConfig(),
+        rng: random.Random | None = None,
+    ) -> tuple[list[SurfacedMemory], list[SurfacedMemory]]:
+        """Discover every landing source in one query, then expand both sections."""
+
+        upcoming_queries = [
+            source.discovery_query(ctx, max_upcoming) for source in upcoming_sources
+        ]
+        memory_queries = [
+            config.source.discovery_query(ctx, config.fetch_limit)
+            for config in memory_sources
+        ]
+        async with get_async_connection() as conn:
+            batches = await _fetch_discovery_batches(
+                conn, [*upcoming_queries, *memory_queries]
+            )
+            split = len(upcoming_queries)
+            upcoming = await _expand_upcoming(
+                conn,
+                ctx,
+                batches[:split],
+                limit=max_upcoming,
+                adjacent_edges=adjacent_edges,
+            )
+            upcoming_node_ids = {item.anchor.id for item in upcoming}
+            upcoming_edge_ids = {
+                edge.edge_id for item in upcoming for edge in item.edges
+            }
+            memories = await _expand_ranked(
+                conn,
+                ctx,
+                memory_sources,
+                batches[split:],
+                max_cards=max_cards,
+                expansion=expansion,
+                rng=rng,
+                shown_node_ids=upcoming_node_ids,
+                shown_edge_ids=upcoming_edge_ids,
+            )
+        return upcoming, memories
+
     async def surface_upcoming(
         self,
         *,
@@ -766,33 +993,16 @@ class PostgresMemorySurfacingStore:
         """
 
         async with get_async_connection() as conn:
-            anchors = []
-            for source in sources:
-                anchors += await source.fetch(conn, ctx, limit)
-            anchors.sort(
-                key=lambda anchor: (
-                    anchor.when is None,
-                    anchor.when or date.max,
-                    -anchor.score,
-                )
+            batches = await _fetch_discovery_batches(
+                conn, [source.discovery_query(ctx, limit) for source in sources]
             )
-            anchors = anchors[:limit]
-
-            tasks = []
-            for anchor in anchors:
-                edges = await _context_edges(
-                    conn,
-                    ctx,
-                    [anchor.id],
-                    exclude_edge_ids=[],
-                    limit=adjacent_edges,
-                )
-                nodes = await _load_nodes(conn, ctx, {anchor.id} | _endpoints(edges))
-                nodes.sort(
-                    key=lambda node: (node.node_id != anchor.id, node.title.casefold())
-                )
-                tasks.append(SurfacedMemory(anchor, True, nodes, edges))
-        return tasks
+            return await _expand_upcoming(
+                conn,
+                ctx,
+                batches,
+                limit=limit,
+                adjacent_edges=adjacent_edges,
+            )
 
     async def surface_memories(
         self,
@@ -804,41 +1014,22 @@ class PostgresMemorySurfacingStore:
         rng: random.Random | None = None,
     ) -> list[SurfacedMemory]:
         async with get_async_connection() as conn:
-            batches = []
-            for config in sources:
-                anchors = await config.source.fetch(conn, ctx, config.fetch_limit)
-                batches.append((config, anchors))
-            ranked = rank_anchors(batches, rng=rng)
-
-            memories: list[SurfacedMemory] = []
-            shown_node_ids: set[UUID] = set()
-            shown_edge_ids: set[UUID] = set()
-            taken_by_source: dict[int, int] = {}
-            unpinned = 0
-            for item in ranked:
-                if not item.pinned:
-                    if unpinned >= max_cards:
-                        break
-                    limit = sources[item.source_index].limit
-                    if taken_by_source.get(item.source_index, 0) >= limit:
-                        continue
-                    # Sources often land on the same subgraph; skip a card whose
-                    # anchor an earlier card already shows.
-                    shown = shown_edge_ids if item.anchor.kind == "edge" else shown_node_ids
-                    if item.anchor.id in shown:
-                        continue
-                memory = await _expand(conn, ctx, item, expansion, shown_edge_ids)
-                if memory is None:
-                    continue
-                memories.append(memory)
-                shown_node_ids |= {node.node_id for node in memory.nodes}
-                shown_edge_ids |= {edge.edge_id for edge in memory.edges}
-                if not item.pinned:
-                    taken_by_source[item.source_index] = (
-                        taken_by_source.get(item.source_index, 0) + 1
-                    )
-                    unpinned += 1
-        return memories
+            batches = await _fetch_discovery_batches(
+                conn,
+                [
+                    config.source.discovery_query(ctx, config.fetch_limit)
+                    for config in sources
+                ],
+            )
+            return await _expand_ranked(
+                conn,
+                ctx,
+                sources,
+                batches,
+                max_cards=max_cards,
+                expansion=expansion,
+                rng=rng,
+            )
 
 
 async def _expand(

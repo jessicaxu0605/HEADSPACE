@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import UTC, date, datetime
 from functools import lru_cache
 from typing import Any, Literal, cast
@@ -45,7 +45,6 @@ from app.persistence.postgres.connection import (
 )
 from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
 from app.persistence.postgres.memory_surfacing import (
-    DEFAULT_LANDING_SOURCES,
     PostgresMemorySurfacingStore,
 )
 from app.persistence.postgres.node_neighborhood import PostgresNodeNeighborhoodStore
@@ -760,17 +759,9 @@ async def read_landing(
         exclude_edge_ids=frozenset(exclude_edge_ids),
         embedding_model=embedding_model,
     )
-    upcoming = await surfacing_store.surface_upcoming(ctx=ctx, limit=max_upcoming)
-    # Facts already in the upcoming list are not drawn again as memories.
-    upcoming_edge_ids = {edge.edge_id for item in upcoming for edge in item.edges}
-    upcoming_node_ids = {item.anchor.id for item in upcoming}
-    memories = await surfacing_store.surface_memories(
-        ctx=replace(
-            ctx,
-            exclude_node_ids=ctx.exclude_node_ids | upcoming_node_ids,
-            exclude_edge_ids=ctx.exclude_edge_ids | upcoming_edge_ids,
-        ),
-        sources=DEFAULT_LANDING_SOURCES,
+    upcoming, memories = await surfacing_store.surface_landing(
+        ctx=ctx,
+        max_upcoming=max_upcoming,
         max_cards=max_cards,
     )
     return LandingResponse(

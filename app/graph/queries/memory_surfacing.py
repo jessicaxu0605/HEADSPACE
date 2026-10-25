@@ -66,17 +66,28 @@ class SurfaceAnchor:
     when: date | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class DiscoveryQuery:
+    """A source-local query returning normalized anchor columns.
+
+    Every query returns ``anchor_kind``, ``anchor_id``, ``score``, ``note``,
+    and ``anchor_date``. The store can therefore combine any enabled set with
+    ``UNION ALL`` without knowing the source's internal schema.
+    """
+
+    source_name: str
+    sql: str
+    params: dict[str, Any]
+
+
 class SurfacingSource(Protocol):
-    """One candidate query. ``conn`` is the store's open database connection."""
+    """One modular candidate query consumed by the persistence store."""
 
     name: str
 
-    async def fetch(
-        self,
-        conn: Any,
-        ctx: SurfacingContext,
-        limit: int,
-    ) -> list[SurfaceAnchor]: ...
+    def discovery_query(
+        self, ctx: SurfacingContext, limit: int
+    ) -> DiscoveryQuery: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +174,14 @@ class SurfacedMemory:
 
 
 class MemorySurfacingStore(Protocol):
+    async def surface_landing(
+        self,
+        *,
+        ctx: SurfacingContext,
+        max_upcoming: int,
+        max_cards: int,
+    ) -> tuple[list[SurfacedMemory], list[SurfacedMemory]]: ...
+
     async def surface_upcoming(
         self,
         *,
@@ -200,11 +219,29 @@ def rank_anchors(
     ``limit``. Unpinned anchors follow in a weighted random order with weight
     ``importance × score`` (Efraimidis–Spirakis keys). Unpinned anchors are not
     capped here: the caller enforces source limits and ``max_cards`` while it
-    also skips cards that repeat an earlier card. An anchor already ranked from
-    an earlier source is dropped.
+    also skips cards that repeat an earlier card. When sources return the same
+    anchor, the pinned/highest-importance source owns it; score and source order
+    break ties.
     """
 
     rng = rng or random.Random()
+    winners: dict[tuple[AnchorKind, UUID], tuple[int, SurfaceAnchor]] = {}
+    winner_priorities: dict[
+        tuple[AnchorKind, UUID], tuple[int, float, float, int]
+    ] = {}
+    for index, (config, anchors) in enumerate(batches):
+        for anchor in anchors:
+            key = (anchor.kind, anchor.id)
+            priority = (
+                int(config.pinned),
+                config.importance,
+                anchor.score,
+                -index,
+            )
+            if priority > winner_priorities.get(key, (-1, -1, -1, -len(batches))):
+                winner_priorities[key] = priority
+                winners[key] = (index, anchor)
+
     seen: set[tuple[AnchorKind, UUID]] = set()
     ranked: list[RankedAnchor] = []
 
@@ -213,6 +250,8 @@ def rank_anchors(
             continue
         taken = 0
         for anchor in sorted(anchors, key=lambda a: -a.score):
+            if winners.get((anchor.kind, anchor.id)) != (index, anchor):
+                continue
             if taken >= config.limit:
                 break
             if (anchor.kind, anchor.id) in seen:
@@ -226,6 +265,8 @@ def rank_anchors(
         if config.pinned or config.importance <= 0:
             continue
         for anchor in anchors:
+            if winners.get((anchor.kind, anchor.id)) != (index, anchor):
+                continue
             weight = max(config.importance * anchor.score, _MIN_DRAW_WEIGHT)
             # u^(1/w) sorted descending is a weighted sample without replacement.
             keyed.append((rng.random() ** (1 / weight), index, anchor))
