@@ -34,6 +34,7 @@ from app.workflows.ingest.groq_chunk_extraction import (
     _parse_repair_item,
     _required,
     _resolve_api_key,
+    _resolve_temperature,
     _to_jsonable,
     create_structured_completion,
 )
@@ -85,9 +86,6 @@ class GroqTwoStageExtractionLLM:
         node_reasoning_effort: Literal["low", "medium", "high"] = "medium",
         edge_reasoning_effort: Literal["low", "medium", "high"] = "low",
         max_completion_tokens: int = 3_000,
-        # Below Groq's default of 1 to steady node selection between runs, but
-        # not near 0, which can lock in one reading of ambiguous text.
-        temperature: float = 0.5,
         transport_retries: int = 2,
         response_repair_attempts: int = 2,
         timeout_seconds: float = 60.0,
@@ -117,7 +115,7 @@ class GroqTwoStageExtractionLLM:
         self.node_reasoning_effort = node_reasoning_effort
         self.edge_reasoning_effort = edge_reasoning_effort
         self.max_completion_tokens = max_completion_tokens
-        self.temperature = temperature
+        self.temperature = _resolve_temperature()
         self.response_repair_attempts = response_repair_attempts
 
     async def extract_chunk(

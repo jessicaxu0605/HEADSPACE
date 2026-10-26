@@ -47,6 +47,9 @@ T = TypeVar("T")
 
 DEFAULT_GROQ_EXTRACTION_MODEL = "openai/gpt-oss-120b"
 DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[3] / ".env.local"
+# Below Groq's default of 1 to steady output between runs, but not near 0, which
+# can lock in one reading of ambiguous text.
+DEFAULT_GROQ_TEMPERATURE = 0.5
 
 
 class MalformedChunkExtractionResponseError(ValueError):
@@ -258,6 +261,13 @@ def _resolve_api_key(
     )
     local_api_key = local_values.get("GROQ_API_KEY")
     return local_api_key if isinstance(local_api_key, str) and local_api_key else None
+
+
+def _resolve_temperature() -> float:
+    temperature = float(os.getenv("GROQ_TEMPERATURE", DEFAULT_GROQ_TEMPERATURE))
+    if not 0 <= temperature <= 2:
+        raise ValueError("GROQ_TEMPERATURE must be between 0 and 2")
+    return temperature
 
 
 def parse_chunk_extraction_output(raw_response: str) -> ChunkExtractionOutput:

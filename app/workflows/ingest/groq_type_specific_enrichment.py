@@ -17,6 +17,7 @@ from app.workflows.ingest.groq_chunk_extraction import (
     _object_schema,
     _required,
     _resolve_api_key,
+    _resolve_temperature,
     _response_content,
     _string,
     _to_jsonable,
@@ -64,6 +65,7 @@ class GroqTypeSpecificEnrichmentLLM:
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.max_completion_tokens = max_completion_tokens
+        self.temperature = _resolve_temperature()
         self.response_repair_attempts = response_repair_attempts
 
     async def enrich_chunk(
@@ -96,6 +98,7 @@ class GroqTypeSpecificEnrichmentLLM:
                     },
                     reasoning_effort=self.reasoning_effort,
                     max_completion_tokens=self.max_completion_tokens,
+                    temperature=self.temperature,
                     stream=False,
                 )
                 return parse_type_specific_enrichment_output(
