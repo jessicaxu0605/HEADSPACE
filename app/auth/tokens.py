@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -36,10 +37,33 @@ def _setting(name: str, default: str | None = None) -> str | None:
     return str(value) if value is not None else default
 
 
+PEM_BLOCK = re.compile(
+    r"-----BEGIN ([A-Z ]+)-----(.*?)-----END \1-----", re.DOTALL
+)
+
+
+def _normalize_pem(value: str) -> str:
+    """Rebuild a PEM key pasted into a single-line env var.
+
+    Dashboards often turn line breaks into spaces, keep surrounding quotes, or
+    double-escape ``\\n``. The base64 body is whitespace-insensitive, so it is
+    re-wrapped at 64 columns between its BEGIN/END lines.
+    """
+
+    text = value.strip().strip("'\"").replace("\\n", "\n").replace("\r", "")
+    match = PEM_BLOCK.search(text)
+    if match is None:
+        return text
+    label, body = match.groups()
+    body = "".join(body.replace("\\", "").split())
+    lines = [body[i : i + 64] for i in range(0, len(body), 64)]
+    return "\n".join([f"-----BEGIN {label}-----", *lines, f"-----END {label}-----", ""])
+
+
 def _read_key(value_name: str, path_name: str) -> str:
     value = _setting(value_name)
     if value:
-        return value.replace("\\n", "\n")
+        return _normalize_pem(value)
     path = _setting(path_name)
     if path:
         key_path = Path(path)

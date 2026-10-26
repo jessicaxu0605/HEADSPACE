@@ -22,8 +22,23 @@ from app.workspaces.api import router as workspace_router
 
 
 def _cors_origins() -> list[str]:
+    """Parse API_CORS_ORIGINS, tolerating quotes and trailing slashes.
+
+    Browsers send origins as scheme://host[:port] with no path, so a pasted
+    "https://example.com/" would otherwise never match.
+    """
+
     configured = os.getenv("API_CORS_ORIGINS", "http://localhost:5173")
-    return [origin.strip() for origin in configured.split(",") if origin.strip()]
+    origins: list[str] = []
+    for value in configured.strip().strip("'\"").split(","):
+        origin = value.strip().strip("'\"").rstrip("/")
+        if origin and origin not in origins:
+            origins.append(origin)
+    return origins
+
+
+CORS_ORIGINS = _cors_origins()
+print(f"CORS allowed origins: {CORS_ORIGINS}", flush=True)
 
 
 @asynccontextmanager
@@ -46,7 +61,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins(),
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],

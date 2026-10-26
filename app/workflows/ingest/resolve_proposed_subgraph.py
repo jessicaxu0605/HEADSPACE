@@ -38,6 +38,7 @@ from app.workflows.ingest.types import (
     ProposedGraph,
     ProposedNode,
 )
+from app.workspaces.models import SPACE_OWNER_ALIAS
 
 
 NodeMatchKind: TypeAlias = Literal[
@@ -1366,6 +1367,9 @@ def _preferred_title(
     node_type: NodeType | str,
 ) -> str:
     if _normalize(current) == _normalize(proposed):
+        return current
+    if _normalize(proposed) == _normalize(SPACE_OWNER_ALIAS):
+        # The alias only stands in for the owner; never let it replace a name.
         return current
     if _title_quality(proposed, node_type) > _title_quality(current, node_type):
         return proposed

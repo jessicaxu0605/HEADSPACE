@@ -10,6 +10,11 @@ from uuid import UUID
 
 WorkspaceRole = Literal["owner", "editor", "viewer"]
 
+# The owner's self node carries this alias so ingestion can resolve a
+# context-less "I" to it with an exact identifier match.
+SPACE_OWNER_ALIAS = "space owner"
+SPACE_OWNER_SUMMARY = "The owner of this space."
+
 
 @dataclass(frozen=True)
 class Workspace:

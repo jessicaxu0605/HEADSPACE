@@ -13,6 +13,8 @@ from app.persistence.postgres.connection import get_async_connection
 from app.workspaces.models import (
     CreatedWorkspace,
     MemberWorkspace,
+    SPACE_OWNER_ALIAS,
+    SPACE_OWNER_SUMMARY,
     Workspace,
     WorkspaceMembership,
     WorkspaceRole,
@@ -102,7 +104,7 @@ async def insert_workspace(
                 (
                     workspace_id,
                     user.name,
-                    user.about,
+                    " ".join(filter(None, [SPACE_OWNER_SUMMARY, user.about])),
                     Jsonb(profile) if profile else None,
                     f"workspace-self:{user.id}",
                 ),
@@ -110,6 +112,15 @@ async def insert_workspace(
         ).fetchone()
         assert node_row is not None
         self_node_id = node_row["id"]
+        await conn.execute(
+            """
+            INSERT INTO node_identifier (
+                workspace_id, node_id, identifier_text, confidence
+            )
+            VALUES (%s, %s, %s, 1.0)
+            """,
+            (workspace_id, self_node_id, SPACE_OWNER_ALIAS),
+        )
         await conn.execute(
             """
             INSERT INTO projection_rebuild_queue (

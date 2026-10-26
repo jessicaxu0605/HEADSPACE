@@ -483,6 +483,9 @@ Identity
   inferred from context. Expand short forms using the topic and setting.
 - Keep short forms used in the source (abbreviations, nicknames, handles) in
   names alongside primary_reference_name.
+- When "I", "me", or "my" refers to the author and the source gives no name or
+  other identifying context for them, they are the owner of this space: create
+  a person node with primary_reference_name "space owner".
 - Email addresses and account handles belong in a person's external_ids. Add them
   to names only if the source refers to the person by them.
 

@@ -190,6 +190,30 @@ class ResolveProposedSubgraphTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    async def test_space_owner_alias_resolves_without_replacing_name(self) -> None:
+        owner = CanonicalNode(
+            uuid4(), "person", "Jessica", identifiers=["space owner"]
+        )
+        graph = ProposedGraph(
+            nodes=[ProposedNode("me", "person", ["space owner"], "space owner")]
+        )
+
+        plan = await resolve_proposed_subgraph(
+            workspace_id=uuid4(),
+            source_id=uuid4(),
+            proposed_graph=graph,
+            store=SimpleCanonicalGraphResolverStore(nodes=[owner]),
+        )
+
+        self.assertEqual(plan.node_bindings[0].outcome, "resolved")
+        self.assertEqual(plan.node_bindings[0].node_id, owner.node_id)
+        self.assertFalse(
+            any(
+                isinstance(action, UpdateCanonicalNodeTitle)
+                for action in plan.node_actions
+            )
+        )
+
     async def test_email_local_part_resolves_person_and_promotes_title(self) -> None:
         email_person = CanonicalNode(uuid4(), "person", "andr3w.xu@gmail.com")
         graph = ProposedGraph(
