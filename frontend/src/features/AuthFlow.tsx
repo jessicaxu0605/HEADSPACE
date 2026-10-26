@@ -5,6 +5,7 @@ import {
   type CreateUserInput,
   type LoginResponse,
 } from "../api";
+import type { SignupWorkspace } from "../providers/SessionProvider";
 import {
   PageTransition,
   PresenceTransition,
@@ -34,7 +35,10 @@ type AuthStatusTarget =
   | null;
 
 type AuthFlowProps = {
-  onAuthenticated: (login: LoginResponse) => void;
+  onAuthenticated: (
+    login: LoginResponse,
+    signupWorkspace?: SignupWorkspace,
+  ) => void;
 };
 
 const emptySignup: CreateUserInput = {
@@ -134,10 +138,15 @@ export default function AuthFlow({ onAuthenticated }: AuthFlowProps) {
     setSubmitting(true);
     clearStatus();
     try {
-      // Signup also creates the account's default workspace, which the
-      // workspace provider selects once the new session is signed in.
-      await createUser(skipAbout ? { ...signup, about: "" } : signup);
-      onAuthenticated(await login(signup.email, signup.password));
+      // Signup also creates the account's default workspace, which then
+      // opens like any just-created workspace.
+      const created = await createUser(
+        skipAbout ? { ...signup, about: "" } : signup,
+      );
+      onAuthenticated(await login(signup.email, signup.password), {
+        workspaceId: created.default_workspace_id,
+        selfNodeId: created.self_node_id,
+      });
     } catch (error) {
       showStatus(
         error instanceof Error

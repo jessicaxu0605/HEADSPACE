@@ -44,6 +44,13 @@ export type UserProfile = {
   created_at: string;
 };
 
+// Signup also creates the account's default workspace, with the user's node
+// in it.
+export type CreatedUser = UserProfile & {
+  default_workspace_id: string;
+  self_node_id: string | null;
+};
+
 export type AuthSession = {
   id: string;
   user: UserProfile;
@@ -216,8 +223,8 @@ export const createUser = async ({
   firstName,
   lastName,
   about,
-}: CreateUserInput): Promise<UserProfile> =>
-  requestJson<UserProfile>("/api/v1/auth/users", {
+}: CreateUserInput): Promise<CreatedUser> =>
+  requestJson<CreatedUser>("/api/v1/auth/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

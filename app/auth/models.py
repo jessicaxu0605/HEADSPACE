@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from uuid import UUID
 
+from app.workspaces.models import CreatedWorkspace
+
 
 @dataclass(frozen=True)
 class User:
@@ -15,6 +17,14 @@ class User:
     created_at: datetime
     birthday: date | None = None
     about: str | None = None
+
+
+@dataclass(frozen=True)
+class NewAccount:
+    """A just-created user and the default workspace signup made for them."""
+
+    user: User
+    workspace: CreatedWorkspace
 
 
 @dataclass(frozen=True, kw_only=True)

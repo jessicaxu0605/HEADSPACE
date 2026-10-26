@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.auth.models import AuthenticatedSession, IssuedSession, User
+from app.auth.models import AuthenticatedSession, IssuedSession, NewAccount, User
 from app.auth.passwords import PasswordManager
 from app.auth.service import AuthService, InvalidCredentialsError
 from app.auth.store import EmailAlreadyExistsError, PostgresAuthStore
@@ -91,6 +91,21 @@ class UserResponse(BaseModel):
         )
 
 
+class CreateUserResponse(UserResponse):
+    # The workspace signup created for the account, and the user's node in it,
+    # so the client can open it as a just-created workspace.
+    default_workspace_id: UUID
+    self_node_id: UUID | None
+
+    @classmethod
+    def from_new_account(cls, account: NewAccount) -> "CreateUserResponse":
+        return cls(
+            **UserResponse.from_user(account.user).model_dump(),
+            default_workspace_id=account.workspace.workspace.id,
+            self_node_id=account.workspace.self_node_id,
+        )
+
+
 class SessionResponse(BaseModel):
     id: UUID
     user: UserResponse
@@ -158,14 +173,14 @@ async def get_current_session(
 
 
 @router.post(
-    "/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+    "/users", response_model=CreateUserResponse, status_code=status.HTTP_201_CREATED
 )
 async def create_user(
     request: CreateUserRequest,
     service: AuthService = Depends(get_auth_service),
-) -> UserResponse:
+) -> CreateUserResponse:
     try:
-        user = await service.create_user(
+        account = await service.create_user(
             email=request.email,
             name=request.name,
             password=request.password,
@@ -174,7 +189,7 @@ async def create_user(
         )
     except EmailAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return UserResponse.from_user(user)
+    return CreateUserResponse.from_new_account(account)
 
 
 @router.post("/login", response_model=LoginResponse)

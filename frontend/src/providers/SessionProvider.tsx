@@ -19,19 +19,31 @@ import {
   type UserProfile,
 } from "../api";
 
+// The default workspace signup created, carried from signup to the workspace
+// provider so it opens like any other just-created workspace.
+export type SignupWorkspace = { workspaceId: string; selfNodeId: string | null };
+
 export type SessionState =
   | { status: "checking" }
   | { status: "signed-out" }
-  | { status: "signed-in"; user: UserProfile };
+  | {
+      status: "signed-in";
+      user: UserProfile;
+      signupWorkspace: SignupWorkspace | null;
+    };
 
 type SessionContextValue = SessionState & {
-  signIn: (login: LoginResponse) => void;
+  signIn: (login: LoginResponse, signupWorkspace?: SignupWorkspace) => void;
   signOut: () => void;
 };
 
 // The user confirmed for one specific token. A different token (another login,
 // another tab) has to be confirmed again before anything is shown.
-type VerifiedSession = { token: string; user: UserProfile };
+type VerifiedSession = {
+  token: string;
+  user: UserProfile;
+  signupWorkspace?: SignupWorkspace;
+};
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
@@ -54,10 +66,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => request.abort();
   }, [isVerified, token]);
 
-  const signIn = useCallback((login: LoginResponse): void => {
-    setVerified({ token: login.access_token, user: login.session.user });
-    setAccessToken(login.access_token);
-  }, []);
+  const signIn = useCallback(
+    (login: LoginResponse, signupWorkspace?: SignupWorkspace): void => {
+      setVerified({
+        token: login.access_token,
+        user: login.session.user,
+        signupWorkspace,
+      });
+      setAccessToken(login.access_token);
+    },
+    [],
+  );
 
   const signOut = useCallback((): void => {
     // Revoke the server session in the background; the reader is signed out
@@ -72,7 +91,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       token === null
         ? { status: "signed-out" }
         : isVerified && verified
-          ? { status: "signed-in", user: verified.user }
+          ? {
+              status: "signed-in",
+              user: verified.user,
+              signupWorkspace: verified.signupWorkspace ?? null,
+            }
           : { status: "checking" };
     return { ...state, signIn, signOut };
   }, [isVerified, signIn, signOut, token, verified]);

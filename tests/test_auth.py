@@ -14,6 +14,7 @@ from app.auth.api import get_auth_service
 from app.auth.models import (
     AuthenticatedSession,
     IssuedSession,
+    NewAccount,
     Session,
     User,
     UserWithPassword,
@@ -23,6 +24,12 @@ from app.auth.service import AuthService, InvalidCredentialsError
 from app.auth.store import PostgresAuthStore
 from app.auth.tokens import InvalidTokenError, JwtTokenCodec
 from app.api.main import app
+from app.workspaces.models import CreatedWorkspace, Workspace
+
+
+def _new_account(user: User) -> NewAccount:
+    workspace = Workspace(uuid4(), "Personal", user.id, user.created_at)
+    return NewAccount(user, CreatedWorkspace(workspace, "owner", uuid4()))
 
 
 def _keys() -> tuple[str, str]:
@@ -58,13 +65,15 @@ class FakeAuthStore:
             password_hash=password_hash,
         )
         self.users_by_email[email.casefold()] = user
-        return User(
-            user.id,
-            user.email,
-            user.name,
-            user.created_at,
-            user.birthday,
-            user.about,
+        return _new_account(
+            User(
+                user.id,
+                user.email,
+                user.name,
+                user.created_at,
+                user.birthday,
+                user.about,
+            )
         )
 
     async def get_user_by_email(self, *, email):
@@ -209,6 +218,9 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
                 return False
 
         connection = Connection()
+        created = CreatedWorkspace(
+            Workspace(uuid4(), "Personal", user_row["id"], now), "owner", uuid4()
+        )
 
         async def insert_workspace(conn, **kwargs):
             events.append("insert workspace")
@@ -217,12 +229,13 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(kwargs["name"], "Personal")
             self.assertTrue(kwargs["create_self_node"])
             self.assertTrue(kwargs["mark_last_used"])
+            return created
 
         with patch(
             "app.auth.store.get_async_connection",
             return_value=ConnectionContext(connection),
         ), patch("app.auth.store.insert_workspace", side_effect=insert_workspace):
-            user = await PostgresAuthStore().create_user(
+            account = await PostgresAuthStore().create_user(
                 email=user_row["email"],
                 name=user_row["name"],
                 password_hash="$argon2id$hash",
@@ -230,7 +243,8 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
                 about=user_row["about"],
             )
 
-        self.assertEqual(user.id, user_row["id"])
+        self.assertEqual(account.user.id, user_row["id"])
+        self.assertIs(account.workspace, created)
         self.assertEqual(
             events, ["begin", "insert user", "insert workspace", "commit"]
         )
@@ -252,13 +266,14 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_creates_user_with_argon2_hash_and_never_stores_password(self):
-        user = await self.service.create_user(
+        account = await self.service.create_user(
             email="jessica@example.com",
             name="Jessica Xu",
             password="correct horse battery",
             birthday=date(1995, 4, 12),
             about="Builds memory tools.",
         )
+        user = account.user
 
         stored = self.store.users_by_email["jessica@example.com"]
         self.assertEqual(user.name, "Jessica Xu")
@@ -271,11 +286,13 @@ class AuthServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(user.about, "Builds memory tools.")
 
     async def test_login_issues_workspace_agnostic_rs256_token(self):
-        user = await self.service.create_user(
-            email="jessica@example.com",
-            name="Jessica Xu",
-            password="correct horse battery",
-        )
+        user = (
+            await self.service.create_user(
+                email="jessica@example.com",
+                name="Jessica Xu",
+                password="correct horse battery",
+            )
+        ).user
 
         issued = await self.service.login(
             email="JESSICA@EXAMPLE.COM", password="correct horse battery"
@@ -372,13 +389,15 @@ class FakeApiAuthService:
 
     async def create_user(self, **kwargs):
         self.created = kwargs
-        return User(
-            self.user.id,
-            kwargs["email"],
-            kwargs["name"],
-            self.user.created_at,
-            kwargs["birthday"],
-            kwargs["about"],
+        return _new_account(
+            User(
+                self.user.id,
+                kwargs["email"],
+                kwargs["name"],
+                self.user.created_at,
+                kwargs["birthday"],
+                kwargs["about"],
+            )
         )
 
     async def login(self, **kwargs):
@@ -428,6 +447,8 @@ class AuthApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.json()["birthday"], "1995-04-12")
+        self.assertIn("default_workspace_id", response.json())
+        self.assertIn("self_node_id", response.json())
         self.assertNotIn("login", response.json())
         self.assertNotIn("gender", response.json())
 

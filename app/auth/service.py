@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from app.auth.models import AuthenticatedSession, IssuedSession, User
+from app.auth.models import AuthenticatedSession, IssuedSession, NewAccount, User
 from app.auth.passwords import PasswordManager
 from app.auth.store import AuthStore
 from app.auth.tokens import InvalidTokenError, JwtTokenCodec, session_expiry
@@ -37,7 +37,7 @@ class AuthService:
         password: str,
         birthday: date | None = None,
         about: str | None = None,
-    ) -> User:
+    ) -> NewAccount:
         password_hash = self._passwords.hash(password)
         return await self._store.create_user(
             email=email,

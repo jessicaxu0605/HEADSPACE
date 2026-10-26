@@ -8,7 +8,13 @@ from uuid import UUID
 
 from psycopg.errors import UniqueViolation
 
-from app.auth.models import AuthenticatedSession, Session, User, UserWithPassword
+from app.auth.models import (
+    AuthenticatedSession,
+    NewAccount,
+    Session,
+    User,
+    UserWithPassword,
+)
 from app.persistence.postgres.connection import get_async_connection
 from app.workspaces.store import insert_workspace
 
@@ -31,7 +37,7 @@ class AuthStore(Protocol):
         password_hash: str,
         birthday: date | None,
         about: str | None,
-    ) -> User: ...
+    ) -> NewAccount: ...
 
     async def get_user_by_email(self, *, email: str) -> UserWithPassword | None: ...
 
@@ -79,7 +85,7 @@ class PostgresAuthStore:
         password_hash: str,
         birthday: date | None,
         about: str | None,
-    ) -> User:
+    ) -> NewAccount:
         try:
             async with get_async_connection() as conn:
                 async with conn.transaction():
@@ -99,7 +105,7 @@ class PostgresAuthStore:
                     ).fetchone()
                     assert row is not None
                     user = _user(row)
-                    await insert_workspace(
+                    workspace = await insert_workspace(
                         conn,
                         user=user,
                         name=DEFAULT_WORKSPACE_NAME,
@@ -108,7 +114,7 @@ class PostgresAuthStore:
                     )
         except UniqueViolation as exc:
             raise EmailAlreadyExistsError("Email is already in use.") from exc
-        return user
+        return NewAccount(user, workspace)
 
     async def get_user_by_email(self, *, email: str) -> UserWithPassword | None:
         async with get_async_connection() as conn:

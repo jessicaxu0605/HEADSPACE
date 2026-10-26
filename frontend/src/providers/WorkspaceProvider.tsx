@@ -72,6 +72,8 @@ const chooseWorkspace = (
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const session = useSession();
   const userId = session.status === "signed-in" ? session.user.id : null;
+  const signupWorkspace =
+    session.status === "signed-in" ? session.signupWorkspace : null;
   const [loaded, setLoaded] = useState<LoadedWorkspaces | null>(null);
   const [failure, setFailure] = useState<{ userId: string; message: string } | null>(
     null,
@@ -87,15 +89,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const request = new AbortController();
     listWorkspaces({ signal: request.signal })
       .then(({ workspaces, last_used_workspace_id }) => {
-        setLoaded((current) => ({
-          userId,
-          workspaces,
-          activeId: chooseWorkspace(
+        setLoaded((current) => {
+          // The first load after signup opens the default workspace (signup
+          // marked it last used) as a just-created one.
+          const created =
+            current?.userId === userId
+              ? current.created
+              : signupWorkspace ?? undefined;
+          return {
+            userId,
             workspaces,
-            current?.userId === userId ? current.activeId : null,
-            last_used_workspace_id,
-          ),
-        }));
+            activeId: chooseWorkspace(
+              workspaces,
+              current?.userId === userId ? current.activeId : null,
+              last_used_workspace_id,
+            ),
+            created,
+          };
+        });
         setFailure(null);
       })
       .catch((error: unknown) => {
@@ -105,7 +116,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setFailure({ userId, message });
       });
     return () => request.abort();
-  }, [reloadCount, userId]);
+  }, [reloadCount, signupWorkspace, userId]);
 
   const activeId = loaded?.userId === userId ? loaded.activeId : null;
 
