@@ -5,7 +5,8 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
-from app.main import app, get_neighborhood_store
+from app.api.dependencies import get_neighborhood_store
+from app.api.main import app
 from app.graph.queries.node_neighborhood import (
     NeighborhoodEdge,
     NeighborhoodNode,

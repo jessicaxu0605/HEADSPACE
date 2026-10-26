@@ -4,7 +4,14 @@ The repository separates deployable application code from design exploration:
 
 ```text
 app/                 Python application package
-  main.py             API entrypoint and upload/status/retry endpoints
+  api/                Deployable HTTP API
+    main.py            FastAPI app: lifespan, CORS, router wiring, /health
+    dependencies.py    Store, LLM, and embedding providers for routes
+    nodes.py           Node search and graph-neighborhood routes
+    edges.py           Edge detail route
+    landing.py         Landing-page surfacing route
+    ingestions.py      Ingestion create/read/run-graph routes
+  auth/, workspaces/   Auth and workspace domains, each with its own router
   models.py           Application-owned PostgreSQL models
   storage.py          Local or object-storage helpers
   embeddings/         Embedding-provider adapters, currently local Ollama
@@ -16,9 +23,7 @@ app/                 Python application package
   workflows/
     ingest/             Ingestion orchestration, extraction, and resolution steps
   jobs/
-    queue.py           Redis/RQ configuration and enqueue helpers
-    tasks.py           Background job entrypoints
-    stages.py          Pipeline stage orchestration
+    queue.py           Redis/RQ configuration (not used yet; ingestion runs inline)
 prototypes/sql/       Disposable SQL schema experiments
 Design Docs/          Product and architecture notes (local/ignored)
 ```
@@ -37,7 +42,26 @@ venv/bin/python -m app.migrate
 Start the API:
 
 ```bash
-venv/bin/uvicorn app.main:app --reload
+venv/bin/uvicorn app.api.main:app --reload
+```
+
+## Deployment
+
+The API image needs only `app/` and `requirements.txt` (see
+`Dockerfile` and `.dockerignore`). Ingestion runs inside the web request, so no
+worker or Redis is required. Apply migrations manually with `python -m app.migrate` before deploying; the
+container only starts uvicorn on `$PORT` (default `8000`). Every setting is read from the
+process environment first, so no `.env.local` is needed in the image.
+
+Required environment: `DATABASE_URL`, `GROQ_API_KEY`, `MEMORY_S3_BUCKET` with
+AWS credentials (plus `MEMORY_S3_REGION` or `MEMORY_S3_ENDPOINT_URL`),
+`AUTH_JWT_PRIVATE_KEY` and `AUTH_JWT_PUBLIC_KEY` (PEM contents),
+`AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, and `API_CORS_ORIGINS`. Without
+`OLLAMA_BASE_URL` reachable, resolution and search fall back to lexical matching.
+
+```bash
+docker build -t headspace-api .
+docker run --env-file .env.local -p 8000:8000 headspace-api
 ```
 
 The API opens an asynchronous PostgreSQL connection pool at startup and closes it at shutdown. `DATABASE_POOL_MIN_SIZE` and `DATABASE_POOL_MAX_SIZE` default to `1`and `5`; adjust them to match the database connection budget.

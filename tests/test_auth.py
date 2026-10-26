@@ -22,7 +22,7 @@ from app.auth.passwords import PasswordManager
 from app.auth.service import AuthService, InvalidCredentialsError
 from app.auth.store import PostgresAuthStore
 from app.auth.tokens import InvalidTokenError, JwtTokenCodec
-from app.main import app
+from app.api.main import app
 
 
 def _keys() -> tuple[str, str]:

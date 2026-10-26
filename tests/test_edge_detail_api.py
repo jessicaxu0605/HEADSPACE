@@ -6,7 +6,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.main import app, get_edge_detail_store
+from app.api.dependencies import get_edge_detail_store
+from app.api.main import app
 from app.graph.queries.edge_detail import (
     EdgeDetail,
     EdgeEndpointNode,

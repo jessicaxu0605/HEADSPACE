@@ -5,7 +5,8 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.main import app, get_run_graph_store
+from app.api.dependencies import get_run_graph_store
+from app.api.main import app
 from app.graph.queries.run_graph import RunGraph, RunGraphEdge, RunGraphNode
 from app.workspaces.dependencies import require_workspace_member
 from tests.helpers import TEST_WORKSPACE_ID, workspace_membership

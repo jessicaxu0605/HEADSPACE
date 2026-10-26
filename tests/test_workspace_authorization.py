@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from app.auth.api import get_current_session
 from app.auth.models import AuthenticatedSession, Session, User
-from app.main import app, get_node_search_store
+from app.api.dependencies import get_node_search_store
+from app.api.main import app
 from app.workspaces.dependencies import (
     get_workspace_membership_store,
     require_workspace_member,

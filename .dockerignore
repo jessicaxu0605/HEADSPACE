@@ -1,0 +1,6 @@
+# Only app/ and requirements.txt belong in the API image.
+*
+!app/
+!requirements.txt
+**/__pycache__/
+**/*.py[cod]

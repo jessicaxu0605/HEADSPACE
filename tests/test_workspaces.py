@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app.auth.api import get_current_session
 from app.auth.models import AuthenticatedSession, Session, User
-from app.main import app
+from app.api.main import app
 from app.workspaces.api import get_workspace_service
 from app.workspaces.models import CreatedWorkspace, MemberWorkspace, Workspace
 from app.workspaces.service import WorkspaceService
