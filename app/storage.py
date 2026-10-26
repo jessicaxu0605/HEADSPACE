@@ -5,15 +5,11 @@ from __future__ import annotations
 import hashlib
 import os
 from functools import lru_cache
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
-from dotenv import dotenv_values
-
-
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
 
 
 def get_s3_bucket() -> str:
@@ -151,8 +147,4 @@ def _client_error_status(exc: ClientError) -> int | None:
 
 
 def _setting(name: str) -> str | None:
-    process_value = os.getenv(name)
-    if process_value is not None:
-        return process_value
-    local_value = dotenv_values(DEFAULT_LOCAL_ENV_PATH).get(name)
-    return local_value if isinstance(local_value, str) else None
+    return os.getenv(name)

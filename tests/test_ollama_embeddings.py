@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import os
-import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -101,22 +100,6 @@ class OllamaEmbeddingEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(engine.dimensions, 2)
         self.assertEqual(engine.document_prefix, "doc: ")
         self.assertEqual(engine.query_prefix, "query: ")
-
-    def test_reads_provider_configuration_from_local_env_file(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            env_path = os.path.join(directory, ".env.local")
-            with open(env_path, "w", encoding="utf-8") as env_file:
-                env_file.write(
-                    "OLLAMA_BASE_URL=http://local-ollama:11434\n"
-                    "EMBEDDING_MODEL=local-model\n"
-                    "EMBEDDING_DIMENSIONS=3\n"
-                )
-            with patch.dict(os.environ, {}, clear=True):
-                engine = OllamaEmbeddingEngine(env_file=env_path)
-
-        self.assertEqual(engine.base_url, "http://local-ollama:11434")
-        self.assertEqual(engine.model, "local-model")
-        self.assertEqual(engine.dimensions, 3)
 
     async def test_each_output_has_unit_length(self) -> None:
         engine = OllamaEmbeddingEngine(

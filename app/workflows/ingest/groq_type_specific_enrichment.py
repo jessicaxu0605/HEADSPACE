@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Literal
 
 from groq import AsyncGroq, BadRequestError
@@ -46,15 +45,13 @@ class GroqTypeSpecificEnrichmentLLM:
         transport_retries: int = 2,
         response_repair_attempts: int = 1,
         timeout_seconds: float = 60.0,
-        env_file: str | os.PathLike[str] | None = None,
         client: Any | None = None,
     ) -> None:
         if client is None:
-            resolved_api_key = _resolve_api_key(api_key, env_file)
+            resolved_api_key = _resolve_api_key(api_key)
             if not resolved_api_key:
                 raise ValueError(
-                    "A Groq API key is required; pass api_key, set GROQ_API_KEY, "
-                    "or add GROQ_API_KEY to .env.local."
+                    "A Groq API key is required; pass api_key or set GROQ_API_KEY."
                 )
             client = AsyncGroq(
                 api_key=resolved_api_key,

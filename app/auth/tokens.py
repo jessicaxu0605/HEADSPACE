@@ -11,12 +11,12 @@ from typing import Any
 from uuid import UUID
 
 import jwt
-from dotenv import dotenv_values
 
 from app.auth.models import Session
 
 
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
+# Relative key paths such as .secrets/auth-jwt-private.pem resolve from here.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class InvalidTokenError(ValueError):
@@ -31,10 +31,7 @@ class TokenClaims:
 
 
 def _setting(name: str, default: str | None = None) -> str | None:
-    value = os.getenv(name)
-    if value is None:
-        value = dotenv_values(DEFAULT_LOCAL_ENV_PATH).get(name)
-    return str(value) if value is not None else default
+    return os.getenv(name, default)
 
 
 PEM_BLOCK = re.compile(
@@ -68,7 +65,7 @@ def _read_key(value_name: str, path_name: str) -> str:
     if path:
         key_path = Path(path)
         if not key_path.is_absolute():
-            key_path = DEFAULT_LOCAL_ENV_PATH.parent / key_path
+            key_path = PROJECT_ROOT / key_path
         return key_path.read_text(encoding="utf-8")
     raise RuntimeError(f"Set {value_name} or {path_name}.")
 

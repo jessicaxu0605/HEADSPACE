@@ -5,28 +5,20 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
-from pathlib import Path
 
 import psycopg
-from dotenv import dotenv_values
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[3] / ".env.local"
 _async_pool: AsyncConnectionPool | None = None
 
 
 def get_database_url() -> str:
     database_url = os.getenv("DATABASE_URL") or os.getenv("NEON_DATABASE_URL")
     if not database_url:
-        local_values = dotenv_values(DEFAULT_LOCAL_ENV_PATH)
-        database_url = local_values.get("DATABASE_URL") or local_values.get(
-            "NEON_DATABASE_URL"
-        )
-    if not database_url:
         raise RuntimeError("Missing DATABASE_URL or NEON_DATABASE_URL.")
-    return str(database_url)
+    return database_url
 
 
 @contextmanager

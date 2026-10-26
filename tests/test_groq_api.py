@@ -5,12 +5,10 @@ import unittest
 from collections.abc import AsyncIterable
 from uuid import uuid4
 
-from dotenv import dotenv_values
 from groq import AsyncGroq
 
 from app.workflows.ingest.groq_chunk_extraction import (
     DEFAULT_GROQ_EXTRACTION_MODEL,
-    DEFAULT_LOCAL_ENV_PATH,
     GroqChunkExtractionLLM,
 )
 from app.workflows.ingest.extract_proposed_subgraph import extract_proposed_subgraph
@@ -46,10 +44,8 @@ def prepared_source(*texts: str) -> PreparedSource:
 )
 class GroqApiIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_returns_a_brief_answer(self) -> None:
-        api_key = os.getenv("GROQ_API_KEY") or dotenv_values(
-            DEFAULT_LOCAL_ENV_PATH
-        ).get("GROQ_API_KEY")
-        self.assertTrue(api_key, "GROQ_API_KEY is missing from .env.local")
+        api_key = os.getenv("GROQ_API_KEY")
+        self.assertTrue(api_key, "GROQ_API_KEY is not set")
 
         client = AsyncGroq(api_key=api_key, max_retries=2, timeout=30.0)
         response = await client.chat.completions.create(

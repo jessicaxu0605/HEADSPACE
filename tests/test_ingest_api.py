@@ -8,7 +8,11 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.api import dependencies
-from app.api.dependencies import get_extraction_llm, get_resolver_store
+from app.api.dependencies import (
+    get_enrichment_llm,
+    get_extraction_llm,
+    get_resolver_store,
+)
 from app.api.main import app
 from app.workflows.ingest.types import IngestionRunRecord
 from app.workspaces.dependencies import require_workspace_member
@@ -70,6 +74,7 @@ class IngestionApiTests(unittest.TestCase):
     def setUp(self) -> None:
         app.dependency_overrides[require_workspace_member] = workspace_membership
         app.dependency_overrides[get_extraction_llm] = lambda: FakeLLM()
+        app.dependency_overrides[get_enrichment_llm] = lambda: FakeLLM()
         self.resolver_store = FakeResolverStore()
         app.dependency_overrides[get_resolver_store] = lambda: self.resolver_store
         self.client = TestClient(app)

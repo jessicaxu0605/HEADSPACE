@@ -9,7 +9,6 @@ neither invent nodes nor pick a relation whose endpoint types do not fit.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass, field
 from itertools import product
 from pathlib import Path
@@ -89,7 +88,6 @@ class GroqTwoStageExtractionLLM:
         transport_retries: int = 2,
         response_repair_attempts: int = 2,
         timeout_seconds: float = 60.0,
-        env_file: str | os.PathLike[str] | None = None,
         client: Any | None = None,
     ) -> None:
         validate_relation_definitions(relation_definitions)
@@ -97,11 +95,10 @@ class GroqTwoStageExtractionLLM:
             raise ValueError("At least one extractable relation type is required")
 
         if client is None:
-            resolved_api_key = _resolve_api_key(api_key, env_file)
+            resolved_api_key = _resolve_api_key(api_key)
             if not resolved_api_key:
                 raise ValueError(
-                    "A Groq API key is required; pass api_key, set GROQ_API_KEY, "
-                    "or add GROQ_API_KEY to .env.local."
+                    "A Groq API key is required; pass api_key or set GROQ_API_KEY."
                 )
             client = AsyncGroq(
                 api_key=resolved_api_key,

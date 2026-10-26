@@ -7,12 +7,9 @@ import json
 import math
 import os
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-
-from dotenv import dotenv_values
 
 from app.search.common import EmbeddingError
 
@@ -22,7 +19,6 @@ DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
 DEFAULT_EMBEDDING_DIMENSIONS = 768
 DEFAULT_DOCUMENT_PREFIX = "search_document: "
 DEFAULT_QUERY_PREFIX = "search_query: "
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[2] / ".env.local"
 
 
 Transport = Callable[[str, Mapping[str, Any], float], Mapping[str, Any]]
@@ -46,27 +42,23 @@ class OllamaEmbeddingEngine:
         timeout_seconds: float = 30.0,
         document_prefix: str | None = None,
         query_prefix: str | None = None,
-        env_file: str | os.PathLike[str] | None = None,
         transport: Transport | None = None,
     ) -> None:
-        local_values = dotenv_values(
-            Path(env_file) if env_file is not None else DEFAULT_LOCAL_ENV_PATH
-        )
         self.base_url = (
             base_url
-            or _setting("OLLAMA_BASE_URL", local_values)
+            or _setting("OLLAMA_BASE_URL")
             or DEFAULT_OLLAMA_BASE_URL
         ).rstrip("/")
         self.model = (
             model
-            or _setting("EMBEDDING_MODEL", local_values)
+            or _setting("EMBEDDING_MODEL")
             or DEFAULT_EMBEDDING_MODEL
         )
         configured_dimensions = (
             dimensions
             if dimensions is not None
             else int(
-                _setting("EMBEDDING_DIMENSIONS", local_values)
+                _setting("EMBEDDING_DIMENSIONS")
                 or str(DEFAULT_EMBEDDING_DIMENSIONS)
             )
         )
@@ -80,13 +72,13 @@ class OllamaEmbeddingEngine:
         self.document_prefix = (
             document_prefix
             if document_prefix is not None
-            else _setting("EMBEDDING_DOCUMENT_PREFIX", local_values)
+            else _setting("EMBEDDING_DOCUMENT_PREFIX")
             or DEFAULT_DOCUMENT_PREFIX
         )
         self.query_prefix = (
             query_prefix
             if query_prefix is not None
-            else _setting("EMBEDDING_QUERY_PREFIX", local_values)
+            else _setting("EMBEDDING_QUERY_PREFIX")
             or DEFAULT_QUERY_PREFIX
         )
         self._transport = transport or _post_json
@@ -141,12 +133,8 @@ class OllamaEmbeddingEngine:
         ]
 
 
-def _setting(name: str, local_values: Mapping[str, str | None]) -> str | None:
-    value = os.getenv(name)
-    if value is not None:
-        return value
-    local_value = local_values.get(name)
-    return local_value if isinstance(local_value, str) else None
+def _setting(name: str) -> str | None:
+    return os.getenv(name)
 
 
 def _validate_and_normalize(value: Any, *, dimensions: int) -> list[float]:

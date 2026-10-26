@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 import unittest
 from copy import deepcopy
 from types import SimpleNamespace
@@ -254,40 +253,6 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
             max_retries=4,
             timeout=12.5,
         )
-
-    def test_reads_api_key_from_local_env_file(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            env_path = os.path.join(directory, ".env.local")
-            with open(env_path, "w", encoding="utf-8") as env_file:
-                env_file.write("GROQ_API_KEY=local-test-key\n")
-
-            with patch.dict(os.environ, {}, clear=True), patch(
-                "app.workflows.ingest.groq_chunk_extraction.AsyncGroq"
-            ) as async_groq:
-                GroqChunkExtractionLLM(
-                    relation_definitions=TEST_RELATION_DEFINITIONS,
-                    env_file=env_path,
-                )
-
-        self.assertEqual(async_groq.call_args.kwargs["api_key"], "local-test-key")
-
-    def test_process_environment_overrides_local_env_file(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            env_path = os.path.join(directory, ".env.local")
-            with open(env_path, "w", encoding="utf-8") as env_file:
-                env_file.write("GROQ_API_KEY=local-test-key\n")
-
-            with patch.dict(
-                os.environ, {"GROQ_API_KEY": "process-test-key"}, clear=True
-            ), patch(
-                "app.workflows.ingest.groq_chunk_extraction.AsyncGroq"
-            ) as async_groq:
-                GroqChunkExtractionLLM(
-                    relation_definitions=TEST_RELATION_DEFINITIONS,
-                    env_file=env_path,
-                )
-
-        self.assertEqual(async_groq.call_args.kwargs["api_key"], "process-test-key")
 
     async def test_includes_domain_repair_context_in_prompt(self) -> None:
         fake_client = FakeClient([json.dumps(valid_wire_output())])

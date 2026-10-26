@@ -12,11 +12,9 @@ import os
 import re
 from copy import deepcopy
 from dataclasses import fields, is_dataclass
-from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar, cast
 from uuid import UUID
 
-from dotenv import dotenv_values
 from groq import AsyncGroq, BadRequestError
 
 from app.workflows.ingest.relation_types import (
@@ -46,7 +44,6 @@ from app.workflows.ingest.types import (
 T = TypeVar("T")
 
 DEFAULT_GROQ_EXTRACTION_MODEL = "openai/gpt-oss-120b"
-DEFAULT_LOCAL_ENV_PATH = Path(__file__).resolve().parents[3] / ".env.local"
 # Below Groq's default of 1 to steady output between runs, but not near 0, which
 # can lock in one reading of ambiguous text.
 DEFAULT_GROQ_TEMPERATURE = 0.5
@@ -84,7 +81,6 @@ class GroqChunkExtractionLLM:
         transport_retries: int = 2,
         response_repair_attempts: int = 2,
         timeout_seconds: float = 60.0,
-        env_file: str | os.PathLike[str] | None = None,
         client: Any | None = None,
     ) -> None:
         if max_completion_tokens <= 0:
@@ -98,11 +94,10 @@ class GroqChunkExtractionLLM:
             raise ValueError("At least one extractable relation type is required")
 
         if client is None:
-            resolved_api_key = _resolve_api_key(api_key, env_file)
+            resolved_api_key = _resolve_api_key(api_key)
             if not resolved_api_key:
                 raise ValueError(
-                    "A Groq API key is required; pass api_key, set GROQ_API_KEY, "
-                    "or add GROQ_API_KEY to .env.local."
+                    "A Groq API key is required; pass api_key or set GROQ_API_KEY."
                 )
             client = AsyncGroq(
                 api_key=resolved_api_key,
@@ -245,26 +240,13 @@ def _groq_error_message(exc: BadRequestError) -> str:
     return message[:1_000]
 
 
-def _resolve_api_key(
-    explicit_api_key: str | None,
-    env_file: str | os.PathLike[str] | None,
-) -> str | None:
-    if explicit_api_key:
-        return explicit_api_key
-
-    process_api_key = os.getenv("GROQ_API_KEY")
-    if process_api_key:
-        return process_api_key
-
-    local_values = dotenv_values(
-        Path(env_file) if env_file is not None else DEFAULT_LOCAL_ENV_PATH
-    )
-    local_api_key = local_values.get("GROQ_API_KEY")
-    return local_api_key if isinstance(local_api_key, str) and local_api_key else None
+def _resolve_api_key(explicit_api_key: str | None) -> str | None:
+    return explicit_api_key or os.getenv("GROQ_API_KEY") or None
 
 
 def _resolve_temperature() -> float:
-    temperature = float(os.getenv("GROQ_TEMPERATURE", DEFAULT_GROQ_TEMPERATURE))
+    configured = os.getenv("GROQ_TEMPERATURE")
+    temperature = float(configured) if configured else DEFAULT_GROQ_TEMPERATURE
     if not 0 <= temperature <= 2:
         raise ValueError("GROQ_TEMPERATURE must be between 0 and 2")
     return temperature

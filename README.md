@@ -34,15 +34,18 @@ Prototype SQL is reference material, not part of the runtime application. Once a
 
 The MVP API accepts manual entries, email text/JSON, and calendar event text/JSON. It stores the complete source in a private S3 bucket, persists the source and ingestion run in PostgreSQL, calls Groq for chunk extraction, resolves against the current workspace graph, and applies the canonical graph transaction atomically.
 
+Settings are read only from the process environment; the app never opens an env
+file itself. Locally, keep them in `.env.local` and pass it at launch:
+
 ```bash
 cp .env.example .env.local
-venv/bin/python -m app.migrate
+venv/bin/dotenv -f .env.local run -- venv/bin/python -m app.migrate
 ```
 
 Start the API:
 
 ```bash
-venv/bin/uvicorn app.api.main:app --reload
+venv/bin/uvicorn app.api.main:app --reload --env-file .env.local
 ```
 
 ## Deployment
@@ -51,7 +54,7 @@ The API image needs only `app/` and `requirements.txt` (see
 `Dockerfile` and `.dockerignore`). Ingestion runs inside the web request, so no
 worker or Redis is required. Apply migrations manually with `python -m app.migrate` before deploying; the
 container only starts uvicorn on `$PORT` (default `8000`). Every setting is read from the
-process environment first, so no `.env.local` is needed in the image.
+process environment, so no `.env.local` is needed in the image.
 
 Required environment: `DATABASE_URL`, `GROQ_API_KEY`, `MEMORY_S3_BUCKET` with
 AWS credentials (plus `MEMORY_S3_REGION` or `MEMORY_S3_ENDPOINT_URL`),

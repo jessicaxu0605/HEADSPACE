@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from io import BytesIO
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from botocore.exceptions import ClientError
@@ -43,16 +42,6 @@ class FakeS3Client:
 
 
 class StorageTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.env_file_patch = patch(
-            "app.storage.DEFAULT_LOCAL_ENV_PATH",
-            Path("/nonexistent/headspace-test.env"),
-        )
-        self.env_file_patch.start()
-
-    def tearDown(self) -> None:
-        self.env_file_patch.stop()
-
     def test_requires_s3_bucket(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             with self.assertRaisesRegex(RuntimeError, "Missing MEMORY_S3_BUCKET"):
