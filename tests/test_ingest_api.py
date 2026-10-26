@@ -7,11 +7,31 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.api import dependencies
 from app.api.dependencies import get_extraction_llm, get_resolver_store
 from app.api.main import app
 from app.workflows.ingest.types import IngestionRunRecord
 from app.workspaces.dependencies import require_workspace_member
 from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
+
+
+class ExtractionDependencyTests(unittest.TestCase):
+    @patch("app.api.dependencies.GroqTwoStageExtractionLLM")
+    @patch("app.api.dependencies.load_active_relation_types")
+    def test_uses_two_stage_extraction(
+        self, load_relation_types, two_stage_extractor
+    ) -> None:
+        relation_definitions = [object()]
+        expected = object()
+        load_relation_types.return_value = relation_definitions
+        two_stage_extractor.return_value = expected
+
+        result = dependencies.get_extraction_llm()
+
+        self.assertIs(result, expected)
+        two_stage_extractor.assert_called_once_with(
+            relation_definitions=relation_definitions
+        )
 
 
 class FakeLLM:

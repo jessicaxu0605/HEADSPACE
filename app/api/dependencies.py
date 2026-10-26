@@ -5,7 +5,6 @@ Tests replace these through ``app.dependency_overrides``.
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
 from app.embeddings import OllamaEmbeddingEngine
@@ -26,7 +25,6 @@ from app.persistence.postgres.node_search import PostgresNodeSearchRepository
 from app.persistence.postgres.run_graph import PostgresRunGraphStore
 from app.search.node_search import NodeSearchEngine, NodeSearchStore
 from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
-from app.workflows.ingest.groq_chunk_extraction import GroqChunkExtractionLLM
 from app.workflows.ingest.groq_two_stage_extraction import GroqTwoStageExtractionLLM
 from app.workflows.ingest.groq_type_specific_enrichment import (
     GroqTypeSpecificEnrichmentLLM,
@@ -34,16 +32,10 @@ from app.workflows.ingest.groq_type_specific_enrichment import (
 
 
 def get_extraction_llm() -> ChunkExtractionLLM:
-    """Build extraction from the current active PostgreSQL relation catalog.
-
-    INGEST_EXTRACTION_MODE=two_stage switches to separate node and edge calls
-    while the two prompt designs are compared.
-    """
+    """Build the two-stage extractor from the active relation catalog."""
 
     relation_definitions = load_active_relation_types()
-    if os.getenv("INGEST_EXTRACTION_MODE") == "two_stage":
-        return GroqTwoStageExtractionLLM(relation_definitions=relation_definitions)
-    return GroqChunkExtractionLLM(relation_definitions=relation_definitions)
+    return GroqTwoStageExtractionLLM(relation_definitions=relation_definitions)
 
 
 @lru_cache(maxsize=1)
