@@ -47,6 +47,9 @@ DEFAULT_GROQ_EXTRACTION_MODEL = "openai/gpt-oss-120b"
 # Below Groq's default of 1 to steady output between runs, but not near 0, which
 # can lock in one reading of ambiguous text.
 DEFAULT_GROQ_TEMPERATURE = 0.5
+# gpt-oss counts reasoning tokens against max_completion_tokens, so a truncated
+# response gets a doubled budget on retry, up to this ceiling.
+MAX_GROQ_COMPLETION_TOKENS = 32_000
 
 
 class MalformedChunkExtractionResponseError(ValueError):
@@ -194,6 +197,14 @@ async def create_structured_completion(
             last_error = ValueError(_groq_error_message(exc))
             if attempt == response_repair_attempts:
                 break
+            if _is_truncation(last_error):
+                # The output was cut off, not wrong: a repair prompt cannot
+                # fix that, but a larger budget can.
+                max_completion_tokens = min(
+                    max_completion_tokens * 2, MAX_GROQ_COMPLETION_TOKENS
+                )
+                messages = base_messages
+                continue
             messages = [
                 *base_messages,
                 {
@@ -232,6 +243,10 @@ def _groq_error_detail(exc: BadRequestError) -> dict[str, Any]:
 
 def _groq_error_code(exc: BadRequestError) -> str | None:
     return _groq_error_detail(exc).get("code")
+
+
+def _is_truncation(error: Exception) -> bool:
+    return "max completion tokens reached" in str(error).lower()
 
 
 def _groq_error_message(exc: BadRequestError) -> str:

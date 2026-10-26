@@ -347,6 +347,37 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("relation_type must be one of", retry_messages[-1]["content"])
         self.assertNotIn("failed_generation", retry_messages[-1]["content"])
 
+    async def test_retries_truncated_output_with_larger_budget(self) -> None:
+        truncated = BadRequestError(
+            "Generated JSON does not match the expected schema.",
+            response=httpx.Response(
+                400, request=httpx.Request("POST", "https://api.groq.com")
+            ),
+            body={
+                "error": {
+                    "message": (
+                        "max completion tokens reached before generating a "
+                        "valid document"
+                    ),
+                    "code": "json_validate_failed",
+                    "failed_generation": "",
+                }
+            },
+        )
+        fake_client = FakeClient([truncated, json.dumps(valid_wire_output())])
+        adapter = GroqChunkExtractionLLM(
+            relation_definitions=TEST_RELATION_DEFINITIONS,
+            client=fake_client,
+            max_completion_tokens=3_000,
+            response_repair_attempts=1,
+        )
+
+        await adapter.extract_chunk(extraction_input=extraction_input())
+
+        first, retry = fake_client.completions.calls
+        self.assertEqual(retry["max_completion_tokens"], 6_000)
+        self.assertEqual(retry["messages"], first["messages"])
+
     async def test_exposes_final_raw_response_after_repair_exhaustion(self) -> None:
         first = valid_wire_output()
         first["repair_items"][0]["details_json"] = "not-json"

@@ -82,7 +82,7 @@ class GroqTwoStageExtractionLLM:
         relation_definitions: list[RelationDefinition],
         api_key: str | None = None,
         model: str = DEFAULT_GROQ_EXTRACTION_MODEL,
-        node_reasoning_effort: Literal["low", "medium", "high"] = "medium",
+        node_reasoning_effort: Literal["low", "medium", "high"] = "low",
         edge_reasoning_effort: Literal["low", "medium", "high"] = "low",
         max_completion_tokens: int = 3_000,
         transport_retries: int = 2,
