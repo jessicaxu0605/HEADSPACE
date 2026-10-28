@@ -11,7 +11,7 @@ from app.graph.queries.memory_surfacing import (
     SurfacingContext,
     rank_anchors,
 )
-from app.persistence.postgres.memory_surfacing import (
+from app.graph.queries.memory_surfacing.sql.postgres import (
     DEFAULT_LANDING_SOURCES,
     DEFAULT_UPCOMING_SOURCES,
     _MemoryDraft,

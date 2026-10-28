@@ -7,11 +7,11 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from app.workflows.ingest import groq_two_stage_extraction
-from app.workflows.ingest.groq_two_stage_extraction import (
+from app.workflows.ingest.extraction.adapters import groq_two_stage
+from app.workflows.ingest.extraction.adapters.groq_two_stage import (
     GroqTwoStageExtractionLLM,
 )
-from app.workflows.ingest.types import (
+from app.workflows.ingest.models import (
     ChunkExtractionInput,
     ChunkExtractionRepairContext,
     ExtractionContext,
@@ -222,21 +222,21 @@ class NodePromptExamplesTests(unittest.TestCase):
             path = Path(directory) / "examples.local.txt"
             path.write_text("Examples\n1. A worked example.\n")
             with patch.object(
-                groq_two_stage_extraction, "NODE_PROMPT_EXAMPLES_PATH", path
+                groq_two_stage, "NODE_PROMPT_EXAMPLES_PATH", path
             ):
-                prompt = groq_two_stage_extraction._node_system_prompt()
+                prompt = groq_two_stage._node_system_prompt()
 
         self.assertTrue(prompt.endswith("Examples\n1. A worked example.\n"))
 
     def test_uses_base_prompt_without_local_examples(self) -> None:
         with patch.object(
-            groq_two_stage_extraction,
+            groq_two_stage,
             "NODE_PROMPT_EXAMPLES_PATH",
             Path("/nonexistent/examples.local.txt"),
         ):
-            prompt = groq_two_stage_extraction._node_system_prompt()
+            prompt = groq_two_stage._node_system_prompt()
 
-        self.assertEqual(prompt, groq_two_stage_extraction._NODE_SYSTEM_PROMPT)
+        self.assertEqual(prompt, groq_two_stage._NODE_SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

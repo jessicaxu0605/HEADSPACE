@@ -14,8 +14,8 @@ from app.api.dependencies import (
     get_resolver_store,
 )
 from app.api.main import app
-from app.workflows.ingest.types import IngestionRunRecord
-from app.workspaces.dependencies import require_workspace_member
+from app.workflows.ingest.models import IngestionRunRecord
+from app.api.workspace_access import require_workspace_member
 from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 
@@ -91,7 +91,7 @@ class IngestionApiTests(unittest.TestCase):
     def test_creates_ingestion_and_returns_persisted_result(self) -> None:
         expected = run_record()
         with patch(
-            "app.api.ingestions.ingest_content",
+            "app.api.routes.ingestions.ingest_content",
             new=AsyncMock(return_value=expected),
         ) as ingest, patch("builtins.print") as print_output:
             response = self.client.post(
@@ -145,7 +145,9 @@ class IngestionApiTests(unittest.TestCase):
 
     def test_get_returns_404_for_unknown_run(self) -> None:
         run_id = uuid4()
-        with patch("app.api.ingestions.get_ingestion_run", return_value=None) as get_run:
+        with patch(
+            "app.api.routes.ingestions.get_ingestion_run", return_value=None
+        ) as get_run:
             response = self.client.get(f"/api/v1/ingestions/{run_id}")
 
         self.assertEqual(response.status_code, 404)

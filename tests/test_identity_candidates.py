@@ -3,19 +3,19 @@ from __future__ import annotations
 import unittest
 from uuid import uuid4
 
-from app.workflows.ingest.identity_candidates import (
+from app.workflows.ingest.resolution.identity_candidates import (
     IDENTITY_EMBEDDING_MAX_SCORE,
     identity_embedding_candidate,
     merge_identity_candidates,
     needs_identity_embedding,
     proposed_identity_text,
 )
-from app.workflows.ingest.resolve_proposed_subgraph import (
+from app.workflows.ingest.resolution.service import (
     CanonicalNode,
     NodeCandidate,
     resolve_proposed_subgraph,
 )
-from app.workflows.ingest.types import ProposedExternalId, ProposedGraph, ProposedNode
+from app.workflows.ingest.models import ProposedExternalId, ProposedGraph, ProposedNode
 from tests.test_resolve_proposed_subgraph import FakeResolverStore
 
 

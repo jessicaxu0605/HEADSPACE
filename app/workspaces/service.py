@@ -6,7 +6,7 @@ from uuid import UUID
 
 from app.auth.models import AuthenticatedSession
 from app.workspaces.models import CreatedWorkspace, MemberWorkspace
-from app.workspaces.store import WorkspaceStore
+from app.workspaces.sql.postgres import WorkspaceStore
 
 
 class WorkspaceService:

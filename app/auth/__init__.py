@@ -1,4 +1,4 @@
-"""User authentication and workspace-aware session management."""
+"""User authentication and session management."""
 
 from app.auth.models import AuthenticatedSession, User
 

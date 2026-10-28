@@ -4,16 +4,16 @@ import unittest
 from collections.abc import AsyncIterable
 from uuid import uuid4
 
-from app.workflows.ingest.extract_proposed_subgraph import (
+from app.workflows.ingest.extraction.service import (
     InvalidChunkExtractionOutputError,
     ProposedSubgraphLimitError,
     ProposedSubgraphLimits,
     _merge_chunk_subgraph,
     extract_proposed_subgraph,
 )
-from app.graph.edge_helpers import combine_edge_details
+from app.workflows.ingest.edge_helpers import combine_edge_details
 from app.workflows.ingest.relation_types import RelationDefinition
-from app.workflows.ingest.types import (
+from app.workflows.ingest.models import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
     ChunkExtractionRepairContext,

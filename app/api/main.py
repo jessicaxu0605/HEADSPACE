@@ -9,16 +9,16 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.edges import router as edges_router
-from app.api.ingestions import router as ingestions_router
-from app.api.landing import router as landing_router
-from app.api.nodes import router as nodes_router
-from app.auth.api import router as auth_router
-from app.persistence.postgres.connection import (
+from app.api.routes.edges import router as edges_router
+from app.api.routes.ingestions import router as ingestions_router
+from app.api.routes.landing import router as landing_router
+from app.api.routes.nodes import router as nodes_router
+from app.api.routes.workspaces import router as workspace_router
+from app.api.routes.auth import router as auth_router
+from app.db.postgres import (
     close_async_pool,
     open_async_pool,
 )
-from app.workspaces.api import router as workspace_router
 
 
 def _cors_origins() -> list[str]:

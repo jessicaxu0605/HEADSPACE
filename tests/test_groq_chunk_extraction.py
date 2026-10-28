@@ -11,7 +11,7 @@ from uuid import uuid4
 import httpx
 from groq import BadRequestError
 
-from app.workflows.ingest.groq_chunk_extraction import (
+from app.workflows.ingest.extraction.adapters.groq_chunk import (
     CHUNK_EXTRACTION_OUTPUT_SCHEMA,
     GroqChunkExtractionLLM,
     MalformedChunkExtractionResponseError,
@@ -19,7 +19,7 @@ from app.workflows.ingest.groq_chunk_extraction import (
     parse_chunk_extraction_output,
 )
 from app.workflows.ingest.relation_types import RelationDefinition
-from app.workflows.ingest.types import (
+from app.workflows.ingest.models import (
     ChunkExtractionInput,
     ChunkExtractionOutput,
     ChunkExtractionRepairContext,
@@ -239,7 +239,7 @@ class GroqChunkExtractionTests(unittest.IsolatedAsyncioTestCase):
 
     def test_configures_sdk_transport_retries(self) -> None:
         with patch(
-            "app.workflows.ingest.groq_chunk_extraction.AsyncGroq"
+            "app.workflows.ingest.extraction.adapters.groq_chunk.AsyncGroq"
         ) as async_groq:
             GroqChunkExtractionLLM(
                 relation_definitions=TEST_RELATION_DEFINITIONS,

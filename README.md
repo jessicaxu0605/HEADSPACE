@@ -7,23 +7,30 @@ app/                 Python application package
   api/                Deployable HTTP API
     main.py            FastAPI app: lifespan, CORS, router wiring, /health
     dependencies.py    Store, LLM, and embedding providers for routes
-    nodes.py           Node search and graph-neighborhood routes
-    edges.py           Edge detail route
-    landing.py         Landing-page surfacing route
-    ingestions.py      Ingestion create/read/run-graph routes
-  auth/, workspaces/   Auth and workspace domains, each with its own router
+    routes/
+      auth.py          Authentication and account routes
+      workspaces.py    Workspace lifecycle routes
+      nodes.py         Node search and graph-neighborhood routes
+      edges.py         Edge detail route
+      landing.py       Landing-page surfacing route
+      ingestions.py    Ingestion create/read/run-graph routes
+    authentication.py  Bearer-token authentication dependencies
+    workspace_access.py Workspace membership authorization dependencies
+  auth/, workspaces/   Auth and workspace domain/application code
   models.py           Application-owned PostgreSQL models
-  storage.py          Local or object-storage helpers
+  integrations/
+    aws/s3.py          Private source-payload storage adapter
+    groq/, ollama/     Model-provider adapters
   embeddings/         Embedding-provider adapters, currently local Ollama
   graph/
-    queries/           Graph read contracts and result models
-  persistence/
-    postgres/          PostgreSQL connections and data-access implementations
-  search/              Search orchestration, ranking, and projection logic
+    queries/           Graph reads, with SQL beside each query capability
+  db/postgres.py       Shared PostgreSQL connection lifecycle
+  search/              Search behavior with capability-local PostgreSQL SQL
   workflows/
     ingest/             Ingestion orchestration, extraction, and resolution steps
   jobs/
     queue.py           Redis/RQ configuration (not used yet; ingestion runs inline)
+migrations/           PostgreSQL migration runner and versioned SQL
 prototypes/sql/       Disposable SQL schema experiments
 Design Docs/          Product and architecture notes (local/ignored)
 ```
@@ -39,7 +46,7 @@ file itself. Locally, keep them in `.env.local` and pass it at launch:
 
 ```bash
 cp .env.example .env.local
-venv/bin/dotenv -f .env.local run -- venv/bin/python -m app.migrate
+venv/bin/dotenv -f .env.local run -- venv/bin/python -m migrations
 ```
 
 Start the API:
@@ -50,9 +57,9 @@ venv/bin/uvicorn app.api.main:app --reload --env-file .env.local
 
 ## Deployment
 
-The API image needs only `app/` and `requirements.txt` (see
+The API image contains `app/`, `migrations/`, and `requirements.txt` (see
 `Dockerfile` and `.dockerignore`). Ingestion runs inside the web request, so no
-worker or Redis is required. Apply migrations manually with `python -m app.migrate` before deploying; the
+worker or Redis is required. Apply migrations manually with `python -m migrations` before deploying; the
 container only starts uvicorn on `$PORT` (default `8000`). Every setting is read from the
 process environment, so no `.env.local` is needed in the image.
 
@@ -198,24 +205,24 @@ Provider URL, model, dimensions, and prefixes can be changed with the`OLLAMA_BAS
 
 ### Search projections
 
-`app/search/node_projection.py` builds two projections per canonical node, as described in Design V1 "Build projections": `identity` (name, aliases, node type, abstracted external-ID providers, stable type-specific fields, and the strongest `is_a`/`part_of`/`located_in` edges) and `profile` (summary, changeable type-specific facts, and the highest strength-times-confidence edges as sentences). Each is stored in `node_search_projection` with its search text, embedding text, vector, and a source hash so unchanged text is not re-embedded.
+`app/workflows/rebuild_projections/node.py` builds two projections per canonical node, as described in Design V1 "Build projections": `identity` (name, aliases, node type, abstracted external-ID providers, stable type-specific fields, and the strongest `is_a`/`part_of`/`located_in` edges) and `profile` (summary, changeable type-specific facts, and the highest strength-times-confidence edges as sentences). Each is stored in `node_search_projection` with its search text, embedding text, vector, and a source hash so unchanged text is not re-embedded.
 
-`app/search/edge_projection.py` builds one projection per canonical edge: the edge as a sentence using the tense-appropriate catalog connector, the relation type and endpoint types with the first sentence of the catalog description (skipped for `related_to`), the edge `details`, its validity window, and up to three evidence quotes ranked by confidence with annotated mentions replaced by node names. It is stored in `edge_search_projection`.
+`app/workflows/rebuild_projections/edge.py` builds one projection per canonical edge: the edge as a sentence using the tense-appropriate catalog connector, the relation type and endpoint types with the first sentence of the catalog description (skipped for `related_to`), the edge `details`, its validity window, and up to three evidence quotes ranked by confidence with annotated mentions replaced by node names. It is stored in `edge_search_projection`.
 
 Ingestion queues affected nodes and edges in `projection_rebuild_queue`. To process the queue:
 
 ```bash
-python -m app.search.rebuild_projections
+python -m app.workflows.rebuild_projections
 ```
 
-Client search (`app/search/node_search.py`, `app/persistence/postgres/node_search.py`) and ingestion resolution are separate: search favors related nodes, resolution asks whether a proposed node is the same identity as an existing one. Resolution adds identity-projection candidates (`app/workflows/ingest/identity_candidates.py`) only when lexical matching found no exact match. Short identity texts embed too similarly to tell same from different entities ("Sarah Chen" vs "Sarah Kim" ≈ 0.86), so those candidates are capped below the auto-resolve threshold: alone they produce `possible_duplicate` review items, and they resolve only when shared graph neighbors raise the score. Both read vectors through `app/persistence/postgres/projection_search.py`. Edge projections are built but not yet searched.
+Client search (`app/graph/queries/node_search/service.py`, with SQL in `app/graph/queries/node_search/sql/postgres.py`) and ingestion resolution are separate: search favors related nodes, resolution asks whether a proposed node is the same identity as an existing one. Resolution adds identity-projection candidates (`app/workflows/ingest/resolution/identity_candidates.py`) only when lexical matching found no exact match. Short identity texts embed too similarly to tell same from different entities ("Sarah Chen" vs "Sarah Kim" ≈ 0.86), so those candidates are capped below the auto-resolve threshold: alone they produce `possible_duplicate` review items, and they resolve only when shared graph neighbors raise the score. Both read vectors through `app/graph/queries/nearest_node_projections/sql/postgres.py`. Edge projections are built but not yet searched.
 
 ### Node summaries
 
 Ingestion sets a node's summary only when it has none. When a resolved node already has a different summary, the incoming one is queued in `node_summary_refresh_queue` (one pending row per node, so several sources are merged together). To merge queued summaries with Groq:
 
 ```bash
-python -m app.workflows.summaries.refresh_summaries
+python -m app.workflows.summaries.refresh
 ```
 
 Updated nodes are queued for a projection rebuild, so run `rebuild_projections` afterwards.

@@ -12,7 +12,7 @@ from app.graph.queries.node_neighborhood import (
     NeighborhoodNode,
     SimpleNodeNeighborhoodStore,
 )
-from app.workspaces.dependencies import require_workspace_member
+from app.api.workspace_access import require_workspace_member
 from tests.helpers import workspace_membership
 
 

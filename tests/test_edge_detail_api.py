@@ -15,7 +15,7 @@ from app.graph.queries.edge_detail import (
     EdgeEvidenceAnnotation,
     EdgeEvidenceSource,
 )
-from app.workspaces.dependencies import require_workspace_member
+from app.api.workspace_access import require_workspace_member
 from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 

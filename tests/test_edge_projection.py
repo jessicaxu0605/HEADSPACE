@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.search.edge_projection import (
+from app.workflows.rebuild_projections.edge import (
     EDGE_PROJECTION_VERSION,
     EdgeProjectionEngine,
     EdgeProjectionSource,

@@ -5,7 +5,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.embeddings import EmbeddingError, OllamaEmbeddingEngine
+from app.integrations.ollama import EmbeddingError, OllamaEmbeddingEngine
 
 
 class RecordingTransport:

@@ -7,27 +7,29 @@ from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-from app.workflows.ingest.enrich_type_specific import enrich_type_specific
-from app.workflows.ingest.groq_type_specific_enrichment import (
+from app.workflows.ingest.enrichment.service import enrich_type_specific
+from app.workflows.ingest.enrichment.adapters.groq import (
     TYPE_SPECIFIC_ENRICHMENT_OUTPUT_SCHEMA,
     parse_type_specific_enrichment_output,
 )
-from app.workflows.ingest.resolve_proposed_subgraph import (
+from app.workflows.ingest.resolution.service import (
     CanonicalNode,
     CreateCanonicalNode,
     CreateNodeExternalId,
     FillCanonicalNodeSummary,
     FillCanonicalNodeTypeSpecific,
-    SimpleCanonicalGraphResolverStore,
     resolve_proposed_subgraph,
 )
-from app.workflows.ingest.type_specific import (
+from app.workflows.ingest.resolution.in_memory import (
+    SimpleCanonicalGraphResolverStore,
+)
+from app.workflows.ingest.enrichment.fields import (
     displayable_type_specific,
     normalize_type_specific,
     type_specific_identity_key,
     with_type_specific_identity,
 )
-from app.workflows.ingest.types import (
+from app.workflows.ingest.models import (
     ExtractionContext,
     ExtractionSourceContext,
     IngestionRunRecord,

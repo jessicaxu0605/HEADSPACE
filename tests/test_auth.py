@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-from app.auth.api import get_auth_service
+from app.api.authentication import get_auth_service
 from app.auth.models import (
     AuthenticatedSession,
     IssuedSession,
@@ -21,7 +21,7 @@ from app.auth.models import (
 )
 from app.auth.passwords import PasswordManager
 from app.auth.service import AuthService, InvalidCredentialsError
-from app.auth.store import PostgresAuthStore
+from app.auth.store.postgres import PostgresAuthStore
 from app.auth.tokens import InvalidTokenError, JwtTokenCodec
 from app.api.main import app
 from app.workspaces.models import CreatedWorkspace, Workspace
@@ -159,7 +159,7 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
 
         connection = Connection()
         with patch(
-            "app.auth.store.get_async_connection",
+            "app.auth.store.postgres.get_async_connection",
             return_value=ConnectionContext(connection),
         ):
             authenticated = await PostgresAuthStore().get_authenticated_session(
@@ -232,9 +232,11 @@ class PostgresAuthStoreTests(unittest.IsolatedAsyncioTestCase):
             return created
 
         with patch(
-            "app.auth.store.get_async_connection",
+            "app.auth.store.postgres.get_async_connection",
             return_value=ConnectionContext(connection),
-        ), patch("app.auth.store.insert_workspace", side_effect=insert_workspace):
+        ), patch(
+            "app.auth.store.postgres.insert_workspace", side_effect=insert_workspace
+        ):
             account = await PostgresAuthStore().create_user(
                 email=user_row["email"],
                 name=user_row["name"],

@@ -1,6 +1,7 @@
-# Only app/ and requirements.txt belong in the API image.
+# Only application code, migrations, and requirements belong in the API image.
 *
 !app/
+!migrations/
 !requirements.txt
 **/__pycache__/
 **/*.py[cod]

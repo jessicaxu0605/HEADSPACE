@@ -7,27 +7,29 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from app.embeddings import OllamaEmbeddingEngine
+from app.integrations.ollama import OllamaEmbeddingEngine
 from app.graph.queries.edge_detail import EdgeDetailStore
 from app.graph.queries.memory_surfacing import MemorySurfacingStore
 from app.graph.queries.node_neighborhood import NodeNeighborhoodStore
 from app.graph.queries.run_graph import RunGraphStore
-from app.persistence.postgres.canonical_graph import (
-    PostgresCanonicalGraphResolverStore,
-    load_active_relation_types,
-)
-from app.persistence.postgres.edge_detail import PostgresEdgeDetailStore
-from app.persistence.postgres.memory_surfacing import (
+from app.graph.queries.edge_detail.sql.postgres import PostgresEdgeDetailStore
+from app.graph.queries.memory_surfacing.sql.postgres import (
     PostgresMemorySurfacingStore,
 )
-from app.persistence.postgres.node_neighborhood import PostgresNodeNeighborhoodStore
-from app.persistence.postgres.node_search import PostgresNodeSearchRepository
-from app.persistence.postgres.run_graph import PostgresRunGraphStore
-from app.search.node_search import NodeSearchEngine, NodeSearchStore
-from app.workflows.ingest.extract_proposed_subgraph import ChunkExtractionLLM
-from app.workflows.ingest.groq_two_stage_extraction import GroqTwoStageExtractionLLM
-from app.workflows.ingest.groq_type_specific_enrichment import (
+from app.graph.queries.node_neighborhood.sql.postgres import PostgresNodeNeighborhoodStore
+from app.graph.queries.node_search.sql.postgres import PostgresNodeSearchRepository
+from app.graph.queries.run_graph.sql.postgres import PostgresRunGraphStore
+from app.graph.queries.node_search import NodeSearchEngine, NodeSearchStore
+from app.workflows.ingest.enrichment.adapters.groq import (
     GroqTypeSpecificEnrichmentLLM,
+)
+from app.workflows.ingest.extraction.adapters.groq_two_stage import (
+    GroqTwoStageExtractionLLM,
+)
+from app.workflows.ingest.extraction.service import ChunkExtractionLLM
+from app.workflows.ingest.resolution.sql.postgres import (
+    PostgresCanonicalGraphResolverStore,
+    load_active_relation_types,
 )
 
 

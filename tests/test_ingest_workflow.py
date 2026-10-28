@@ -7,20 +7,24 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.workflows.ingest.workflow import (
-    _get_relation_type,
-    _persist_review_items,
     IngestionExecutionError,
     StaleTransactionPlanError,
     get_ingestion_run,
     ingest_content,
 )
-from app.workflows.ingest.resolve_proposed_subgraph import (
+from app.workflows.ingest.sql.postgres import (
+    _get_relation_type,
+    _persist_review_items,
+)
+from app.workflows.ingest.resolution.service import (
     CanonicalNode,
     ResolutionTransactionPlan,
     ResolveRepairItem,
+)
+from app.workflows.ingest.resolution.in_memory import (
     SimpleCanonicalGraphResolverStore,
 )
-from app.workflows.ingest.types import (
+from app.workflows.ingest.models import (
     ExtractionContext,
     IngestionRunRecord,
     MemorySourceRecord,
@@ -60,7 +64,7 @@ class IngestWorkflowTests(unittest.IsolatedAsyncioTestCase):
 
         connection = RecordingConnection()
         with patch(
-            "app.workflows.ingest.workflow.get_connection",
+            "app.workflows.ingest.sql.postgres.get_connection",
             return_value=ConnectionContext(connection),
         ):
             result = get_ingestion_run(

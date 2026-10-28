@@ -1,6 +1,6 @@
-# API image: only the app package. Migrations are applied manually
-# (python -m app.migrate) before deploying. Ingestion runs inline in the web
-# process, so no worker or Redis is needed.
+# API image. Migrations are applied manually (python -m migrations) before
+# deploying. Ingestion runs inline in the web process, so no worker or Redis is
+# needed.
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -12,6 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/
+COPY migrations/ migrations/
 
 EXPOSE 8000
 

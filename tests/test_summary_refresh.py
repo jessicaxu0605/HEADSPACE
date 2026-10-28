@@ -4,16 +4,18 @@ import json
 import unittest
 from uuid import UUID, uuid4
 
-from app.workflows.ingest.resolve_proposed_subgraph import (
+from app.workflows.ingest.resolution.service import (
     CanonicalNode,
     FillCanonicalNodeSummary,
     QueueCanonicalNodeSummaryRefresh,
-    SimpleCanonicalGraphResolverStore,
     resolve_proposed_subgraph,
 )
-from app.workflows.ingest.types import ProposedGraph, ProposedNode
-from app.workflows.summaries.groq_summary_merge import parse_summary_merge_output
-from app.workflows.summaries.refresh_summaries import (
+from app.workflows.ingest.resolution.in_memory import (
+    SimpleCanonicalGraphResolverStore,
+)
+from app.workflows.ingest.models import ProposedGraph, ProposedNode
+from app.workflows.summaries.adapters.groq import parse_summary_merge_output
+from app.workflows.summaries.refresh.service import (
     NodeSummaryState,
     SummaryMergeRequest,
     SummaryRefreshItem,
@@ -118,7 +120,7 @@ class DrainSummaryRefreshQueueTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with self.assertLogs(
-            "app.workflows.summaries.refresh_summaries", "ERROR"
+            "app.workflows.summaries.refresh.service", "ERROR"
         ):
             done, failed = await drain_summary_refresh_queue(
                 store=store, llm=FakeMergeLLM(RuntimeError("rate limited"))

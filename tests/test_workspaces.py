@@ -8,13 +8,13 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from app.auth.api import get_current_session
+from app.api.authentication import get_current_session
 from app.auth.models import AuthenticatedSession, Session, User
 from app.api.main import app
-from app.workspaces.api import get_workspace_service
+from app.api.routes.workspaces import get_workspace_service
 from app.workspaces.models import CreatedWorkspace, MemberWorkspace, Workspace
 from app.workspaces.service import WorkspaceService
-from app.workspaces.store import PostgresWorkspaceStore
+from app.workspaces.sql.postgres import PostgresWorkspaceStore
 
 
 def _authenticated() -> AuthenticatedSession:
@@ -358,7 +358,7 @@ class PostgresWorkspaceStoreTests(unittest.IsolatedAsyncioTestCase):
 
         connection = Connection()
         with patch(
-            "app.workspaces.store.get_async_connection",
+            "app.workspaces.sql.postgres.get_async_connection",
             return_value=ConnectionContext(connection),
         ):
             listed = await PostgresWorkspaceStore().list_member_workspaces(

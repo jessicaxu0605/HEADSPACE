@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_node_search_store
 from app.api.main import app
-from app.search.node_search import NodeSearchResult
-from app.workspaces.dependencies import require_workspace_member
+from app.graph.queries.node_search import NodeSearchResult
+from app.api.workspace_access import require_workspace_member
 from tests.helpers import TEST_WORKSPACE_ID, workspace_membership
 
 

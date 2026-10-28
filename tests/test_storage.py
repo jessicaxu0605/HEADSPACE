@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from botocore.exceptions import ClientError
 
-from app.storage import read_storage_object, write_storage_object
+from app.integrations.aws.s3 import read_storage_object, write_storage_object
 
 
 class FakeS3Client:
@@ -63,7 +63,7 @@ class StorageTests(unittest.TestCase):
                 "MEMORY_S3_PREFIX": "headspace",
             },
             clear=True,
-        ), patch("app.storage.get_s3_client", return_value=client):
+        ), patch("app.integrations.aws.s3.get_s3_client", return_value=client):
             write_storage_object("workspace/source.bin", b"memory text")
             stored = read_storage_object("workspace/source.bin")
 
@@ -86,7 +86,7 @@ class StorageTests(unittest.TestCase):
         client = FakeS3Client()
         environment = {"MEMORY_S3_BUCKET": "private-memory-sources"}
         with patch.dict("os.environ", environment, clear=True), patch(
-            "app.storage.get_s3_client", return_value=client
+            "app.integrations.aws.s3.get_s3_client", return_value=client
         ):
             write_storage_object("workspace/source.bin", b"first")
             write_storage_object("workspace/source.bin", b"first")
@@ -99,7 +99,7 @@ class StorageTests(unittest.TestCase):
             "os.environ",
             {"MEMORY_S3_BUCKET": "private-memory-sources"},
             clear=True,
-        ), patch("app.storage.get_s3_client", return_value=client):
+        ), patch("app.integrations.aws.s3.get_s3_client", return_value=client):
             with self.assertRaises(FileNotFoundError):
                 read_storage_object("workspace/missing.bin")
 

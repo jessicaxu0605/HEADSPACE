@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from uuid import UUID, uuid4
 
-from app.search.node_projection import (
+from app.workflows.rebuild_projections.node import (
     NODE_PROJECTION_VERSION,
     NodeProjectionEngine,
     NodeProjectionSource,

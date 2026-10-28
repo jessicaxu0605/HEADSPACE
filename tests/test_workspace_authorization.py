@@ -8,17 +8,17 @@ from uuid import uuid4
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from app.auth.api import get_current_session
+from app.api.authentication import get_current_session
 from app.auth.models import AuthenticatedSession, Session, User
 from app.api.dependencies import get_node_search_store
 from app.api.main import app
-from app.workspaces.dependencies import (
+from app.api.workspace_access import (
     get_workspace_membership_store,
     require_workspace_member,
     require_workspace_writer,
 )
 from app.workspaces.models import WorkspaceMembership
-from app.workspaces.store import PostgresWorkspaceMembershipStore
+from app.workspaces.sql.postgres import PostgresWorkspaceMembershipStore
 from tests.helpers import TEST_WORKSPACE_ID
 
 
@@ -145,7 +145,7 @@ class PostgresWorkspaceMembershipStoreTests(unittest.IsolatedAsyncioTestCase):
 
         connection = Connection()
         with patch(
-            "app.workspaces.store.get_async_connection",
+            "app.workspaces.sql.postgres.get_async_connection",
             return_value=ConnectionContext(connection),
         ):
             membership = await PostgresWorkspaceMembershipStore().get_active_membership(

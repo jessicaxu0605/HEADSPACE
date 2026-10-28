@@ -5,14 +5,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
-from app.embeddings import EmbeddingError
-from app.persistence.postgres.node_search import PostgresNodeSearchRepository
-from app.persistence.postgres.projection_search import ProjectionMatch
-from app.search.node_search import (
+from app.graph.queries.nearest_node_projections.sql.postgres import ProjectionMatch
+from app.graph.queries.node_search import (
     NodeSearchEngine,
     NodeSearchResult,
     merge_search_results,
 )
+from app.graph.queries.node_search.sql.postgres import PostgresNodeSearchRepository
+from app.integrations.ollama import EmbeddingError
 
 
 def _result(node_id, match_kind, score, reason, title="Sarah Chen", identifiers=()):
@@ -128,7 +128,7 @@ class NodeSearchEngineTests(unittest.IsolatedAsyncioTestCase):
             search_semantic=AsyncMock(return_value=[]),
         )
         engine = NodeSearchEngine(repository=repository, embedder=FailingEmbedder())
-        with self.assertLogs("app.search.node_search", "WARNING"):
+        with self.assertLogs("app.graph.queries.node_search", "WARNING"):
             results = await engine.search_nodes(
                 workspace_id=uuid4(),
                 query="Sarah",
@@ -160,10 +160,11 @@ class PostgresNodeSearchRepositoryTests(unittest.IsolatedAsyncioTestCase):
         }
         with (
             patch(
-                "app.persistence.postgres.node_search.nearest_node_projections", nearest
+                "app.graph.queries.node_search.sql.postgres.nearest_node_projections",
+                nearest,
             ),
             patch(
-                "app.persistence.postgres.node_search._load_nodes",
+                "app.graph.queries.node_search.sql.postgres._load_nodes",
                 AsyncMock(return_value={node_id: node_row}),
             ),
         ):

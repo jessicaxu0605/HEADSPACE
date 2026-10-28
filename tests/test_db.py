@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app.persistence.postgres.connection import get_database_url
+from app.db.postgres import get_database_url
 
 
 class DatabaseConfigurationTests(unittest.TestCase):

@@ -7,13 +7,13 @@ from uuid import uuid4
 
 from groq import AsyncGroq
 
-from app.workflows.ingest.groq_chunk_extraction import (
+from app.workflows.ingest.extraction.adapters.groq_chunk import (
     DEFAULT_GROQ_EXTRACTION_MODEL,
     GroqChunkExtractionLLM,
 )
-from app.workflows.ingest.extract_proposed_subgraph import extract_proposed_subgraph
-from app.persistence.postgres.canonical_graph import load_active_relation_types
-from app.workflows.ingest.types import (
+from app.workflows.ingest.extraction.service import extract_proposed_subgraph
+from app.workflows.ingest.resolution.sql.postgres import load_active_relation_types
+from app.workflows.ingest.models import (
     ExtractionSourceContext,
     PreparedSource,
     SourceChunk,
