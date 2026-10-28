@@ -3,5 +3,7 @@
 !app/
 !migrations/
 !requirements.txt
+!services/
+!services/**
 **/__pycache__/
 **/*.py[cod]

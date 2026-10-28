@@ -1,4 +1,4 @@
-"""Local embedding engine backed by Ollama's native HTTP API."""
+"""Client for the standalone Headspace embedding service."""
 
 from __future__ import annotations
 
@@ -12,29 +12,17 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-
 class EmbeddingError(RuntimeError):
-    """Raised when Ollama cannot produce a valid embedding."""
+    """Raised when the embedding service cannot produce a valid vector."""
 
 
-DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
-DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
-DEFAULT_EMBEDDING_DIMENSIONS = 768
-DEFAULT_DOCUMENT_PREFIX = "search_document: "
-DEFAULT_QUERY_PREFIX = "search_query: "
+Transport = Callable[
+    [str, Mapping[str, Any], float, str | None], Mapping[str, Any]
+]
 
 
-Transport = Callable[[str, Mapping[str, Any], float], Mapping[str, Any]]
-
-
-class OllamaEmbeddingEngine:
-    """Generate normalized document and query vectors with a local Ollama model.
-
-    The document/query distinction is explicit because the default Nomic model
-    was trained with different prefixes for indexed content and search queries.
-    Keeping that policy in this adapter prevents callers from silently producing
-    vectors in mismatched spaces.
-    """
+class EmbeddingServiceClient:
+    """Generate vectors through the separately deployed internal service."""
 
     def __init__(
         self,
@@ -43,62 +31,46 @@ class OllamaEmbeddingEngine:
         model: str | None = None,
         dimensions: int | None = None,
         timeout_seconds: float = 30.0,
-        document_prefix: str | None = None,
-        query_prefix: str | None = None,
+        token: str | None = None,
         transport: Transport | None = None,
     ) -> None:
         self.base_url = (
             base_url
-            or _setting("OLLAMA_BASE_URL")
-            or DEFAULT_OLLAMA_BASE_URL
+            if base_url is not None
+            else _required_setting("EMBEDDING_SERVICE_URL")
         ).rstrip("/")
         self.model = (
-            model
-            or _setting("EMBEDDING_MODEL")
-            or DEFAULT_EMBEDDING_MODEL
+            model if model is not None else _required_setting("EMBEDDING_MODEL")
         )
-        configured_dimensions = (
+        self.dimensions = (
             dimensions
             if dimensions is not None
-            else int(
-                _setting("EMBEDDING_DIMENSIONS")
-                or str(DEFAULT_EMBEDDING_DIMENSIONS)
-            )
+            else int(_required_setting("EMBEDDING_DIMENSIONS"))
         )
-        if configured_dimensions <= 0:
+        if self.dimensions <= 0:
             raise ValueError("dimensions must be positive")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
 
-        self.dimensions = configured_dimensions
         self.timeout_seconds = timeout_seconds
-        self.document_prefix = (
-            document_prefix
-            if document_prefix is not None
-            else _setting("EMBEDDING_DOCUMENT_PREFIX")
-            or DEFAULT_DOCUMENT_PREFIX
-        )
-        self.query_prefix = (
-            query_prefix
-            if query_prefix is not None
-            else _setting("EMBEDDING_QUERY_PREFIX")
-            or DEFAULT_QUERY_PREFIX
+        self.token = (
+            token if token is not None else os.getenv("EMBEDDING_SERVICE_TOKEN")
         )
         self._transport = transport or _post_json
 
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed projection text for storage and cosine-distance search."""
 
-        return await self._embed(texts, prefix=self.document_prefix)
+        return await self._embed(texts, input_type="document")
 
     async def embed_query(self, text: str) -> list[float]:
         """Embed one search query in the model's query vector space."""
 
-        vectors = await self._embed([text], prefix=self.query_prefix)
+        vectors = await self._embed([text], input_type="query")
         return vectors[0]
 
     async def _embed(
-        self, texts: Sequence[str], *, prefix: str
+        self, texts: Sequence[str], *, input_type: str
     ) -> list[list[float]]:
         input_texts = list(texts)
         if not input_texts:
@@ -107,40 +79,56 @@ class OllamaEmbeddingEngine:
             raise ValueError("embedding input must contain non-blank strings")
 
         payload = {
-            "model": self.model,
-            "input": [f"{prefix}{text.strip()}" for text in input_texts],
+            "input": [text.strip() for text in input_texts],
+            "input_type": input_type,
         }
         try:
             response = await asyncio.to_thread(
                 self._transport,
-                f"{self.base_url}/api/embed",
+                f"{self.base_url}/v1/embeddings",
                 payload,
                 self.timeout_seconds,
+                self.token,
             )
         except EmbeddingError:
             raise
         except Exception as exc:
-            raise EmbeddingError(f"Ollama embedding request failed: {exc}") from exc
+            raise EmbeddingError(f"Embedding service request failed: {exc}") from exc
 
+        response_model = response.get("model")
+        if response_model != self.model:
+            raise EmbeddingError(
+                "Embedding service used model "
+                f"{response_model!r}; expected {self.model!r}"
+            )
         raw_embeddings = response.get("embeddings")
         if not isinstance(raw_embeddings, list):
-            raise EmbeddingError("Ollama response did not contain an embeddings list")
+            raise EmbeddingError(
+                "Embedding service response did not contain an embeddings list"
+            )
         if len(raw_embeddings) != len(input_texts):
             raise EmbeddingError(
-                "Ollama returned a different number of embeddings than inputs"
+                "Embedding service returned a different number of embeddings "
+                "than inputs"
             )
-
         return [
-            _validate_and_normalize(vector, dimensions=self.dimensions)
+            _validate_vector(vector, dimensions=self.dimensions)
             for vector in raw_embeddings
         ]
 
 
-def _setting(name: str) -> str | None:
-    return os.getenv(name)
+# Temporary compatibility alias for callers outside this repository.
+OllamaEmbeddingEngine = EmbeddingServiceClient
 
 
-def _validate_and_normalize(value: Any, *, dimensions: int) -> list[float]:
+def _required_setting(name: str) -> str:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def _validate_vector(value: Any, *, dimensions: int) -> list[float]:
     if not isinstance(value, list) or len(value) != dimensions:
         actual = len(value) if isinstance(value, list) else "non-list"
         raise EmbeddingError(
@@ -157,18 +145,24 @@ def _validate_and_normalize(value: Any, *, dimensions: int) -> list[float]:
         vector.append(number)
 
     magnitude = math.sqrt(sum(component * component for component in vector))
-    if magnitude == 0:
-        raise EmbeddingError("Ollama returned a zero-magnitude embedding")
-    return [component / magnitude for component in vector]
+    if not math.isclose(magnitude, 1.0, rel_tol=1e-5, abs_tol=1e-6):
+        raise EmbeddingError("Embedding service returned a non-normalized vector")
+    return vector
 
 
 def _post_json(
-    url: str, payload: Mapping[str, Any], timeout_seconds: float
+    url: str,
+    payload: Mapping[str, Any],
+    timeout_seconds: float,
+    token: str | None,
 ) -> Mapping[str, Any]:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -177,15 +171,15 @@ def _post_json(
     except HTTPError as exc:
         details = exc.read().decode("utf-8", errors="replace")
         raise EmbeddingError(
-            f"Ollama returned HTTP {exc.code}: {details or exc.reason}"
+            f"Embedding service returned HTTP {exc.code}: {details or exc.reason}"
         ) from exc
     except URLError as exc:
         raise EmbeddingError(
-            f"Cannot reach Ollama at {url}; start it with `ollama serve`: {exc.reason}"
+            f"Cannot reach embedding service at {url}: {exc.reason}"
         ) from exc
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise EmbeddingError("Ollama returned an invalid JSON response") from exc
+        raise EmbeddingError("Embedding service returned invalid JSON") from exc
 
     if not isinstance(result, dict):
-        raise EmbeddingError("Ollama returned a non-object JSON response")
+        raise EmbeddingError("Embedding service returned non-object JSON")
     return result

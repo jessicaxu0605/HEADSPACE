@@ -20,8 +20,7 @@ app/                 Python application package
   models.py           Application-owned PostgreSQL models
   integrations/
     aws/s3.py          Private source-payload storage adapter
-    groq/, ollama/     Model-provider adapters
-  embeddings/         Embedding-provider adapters, currently local Ollama
+    groq/, ollama/     Model-provider adapters and embedding-service client
   graph/
     queries/           Graph reads, with SQL beside each query capability
   db/postgres.py       Shared PostgreSQL connection lifecycle
@@ -30,6 +29,8 @@ app/                 Python application package
     ingest/             Ingestion orchestration, extraction, and resolution steps
   jobs/
     queue.py           Redis/RQ configuration (not used yet; ingestion runs inline)
+services/
+  embeddings/          Independently deployable private Ollama/FastAPI service
 migrations/           PostgreSQL migration runner and versioned SQL
 prototypes/sql/       Disposable SQL schema experiments
 Design Docs/          Product and architecture notes (local/ignored)
@@ -67,7 +68,7 @@ Required environment: `DATABASE_URL`, `GROQ_API_KEY`, `MEMORY_S3_BUCKET` with
 AWS credentials (plus `MEMORY_S3_REGION` or `MEMORY_S3_ENDPOINT_URL`),
 `AUTH_JWT_PRIVATE_KEY` and `AUTH_JWT_PUBLIC_KEY` (PEM contents),
 `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, and `API_CORS_ORIGINS`. Without
-`OLLAMA_BASE_URL` reachable, resolution and search fall back to lexical matching.
+`EMBEDDING_SERVICE_URL` reachable, resolution and search fall back to lexical matching.
 
 ```bash
 docker build -t headspace-api .
@@ -190,18 +191,59 @@ Workspace creation does not modify the current session or issue a replacement
 token. Clients provide the target `workspace_id` on workspace-scoped requests;
 membership and role are authorized independently of the session.
 
-## Local embeddings
+## Embedding service
 
-The embedding provider lives in `app/embeddings/` and uses Ollama's native `/api/embed` endpoint. The default is `nomic-embed-text` (768 dimensions), with the model's `search_document:` and `search_query:` prefixes applied by the adapter. Returned vectors are validated and normalized for cosine-distance search.
+Embeddings run as an independently deployable internal service in
+`services/embeddings/`. The main application uses
+`app/integrations/ollama/embeddings.py` only as its HTTP client; it no longer
+needs direct access to Ollama. The service uses Ollama's native `/api/embed`
+endpoint and exposes `POST /v1/embeddings` plus `GET /health`. The default is
+`nomic-embed-text` (768 dimensions), with the model's `search_document:` and
+`search_query:` prefixes applied inside the service. Returned vectors are
+validated and normalized for cosine-distance search.
 
-Start Ollama and download the default model once:
+For local development, start Ollama and download the default model once:
 
 ```bash
 brew services start ollama
 ollama pull nomic-embed-text
 ```
 
-Provider URL, model, dimensions, and prefixes can be changed with the`OLLAMA_BASE_URL` and `EMBEDDING_*` settings in `.env.example`. Model and dimension must be changed together; the `embedding` columns of `node_search_projection` and `edge_search_projection` are `vector(768)`, so a different width also needs a migration.
+Then launch the service separately from the API:
+
+```bash
+cp services/embeddings/.env.example services/embeddings/.env.local
+venv/bin/dotenv -f services/embeddings/.env.local run -- \
+  venv/bin/python -m services.embeddings
+```
+
+The application connects through `EMBEDDING_SERVICE_URL` (locally,
+`http://127.0.0.1:8001`). If `EMBEDDING_SERVICE_TOKEN` is set on the service,
+set the same value on every caller. `EMBEDDING_SERVICE_URL`, `EMBEDDING_MODEL`,
+and `EMBEDDING_DIMENSIONS` are required rather than silently defaulted.
+The vector service also requires `EMBEDDING_DOCUMENT_PREFIX` and
+`EMBEDDING_QUERY_PREFIX` as part of its model configuration. Model and
+dimension must be changed together; the
+`embedding` columns of `node_search_projection` and `edge_search_projection`
+are `vector(768)`, so a different width also needs a migration.
+
+Build and run the standalone image from the repository root:
+
+```bash
+docker build -f services/embeddings/Dockerfile -t headspace-embeddings .
+docker run --rm -p 8001:8001 \
+  --env-file services/embeddings/.env.local \
+  -v headspace-ollama-models:/var/lib/ollama \
+  headspace-embeddings
+```
+
+On Render, configure the image as a private service through the dashboard and
+attach a persistent disk at `/var/lib/ollama` so the model is not downloaded
+after every restart. Set `OLLAMA_BASE_URL`, `EMBEDDING_MODEL`,
+`EMBEDDING_DIMENSIONS`, `EMBEDDING_DOCUMENT_PREFIX`, and
+`EMBEDDING_QUERY_PREFIX` on that service. Copy its internal URL into the API's
+`EMBEDDING_SERVICE_URL`, and keep both services in the same Render workspace and
+region. The embedding service should have no public URL.
 
 ### Search projections
 

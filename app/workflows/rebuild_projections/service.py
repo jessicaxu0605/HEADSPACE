@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from app.db.postgres import close_async_pool, open_async_pool
-from app.integrations.ollama.embeddings import OllamaEmbeddingEngine
+from app.integrations.ollama.embeddings import EmbeddingServiceClient
 from app.workflows.rebuild_projections.edge import EdgeProjectionEngine
 from app.workflows.rebuild_projections.node import NodeProjectionEngine
 from app.workflows.rebuild_projections.postgres import (
@@ -60,7 +60,7 @@ async def main() -> None:
     await open_async_pool()
     try:
         queue = PostgresProjectionQueue()
-        embedder = OllamaEmbeddingEngine()
+        embedder = EmbeddingServiceClient()
         nodes = NodeProjectionEngine(store=PostgresNodeProjectionStore(), embedder=embedder)
         edges = EdgeProjectionEngine(store=PostgresEdgeProjectionStore(), embedder=embedder)
         node_counts = await drain_projection_queue(

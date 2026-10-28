@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from app.integrations.ollama import OllamaEmbeddingEngine
+from app.integrations.ollama import EmbeddingServiceClient
 from app.graph.queries.edge_detail import EdgeDetailStore
 from app.graph.queries.memory_surfacing import MemorySurfacingStore
 from app.graph.queries.node_neighborhood import NodeNeighborhoodStore
@@ -51,7 +51,7 @@ def get_enrichment_llm() -> GroqTypeSpecificEnrichmentLLM:
 def get_resolver_store() -> PostgresCanonicalGraphResolverStore:
     """Return live workspace-scoped canonical graph reads."""
 
-    return PostgresCanonicalGraphResolverStore(embedder=OllamaEmbeddingEngine())
+    return PostgresCanonicalGraphResolverStore(embedder=EmbeddingServiceClient())
 
 
 @lru_cache(maxsize=1)
@@ -60,7 +60,7 @@ def get_node_search_store() -> NodeSearchStore:
 
     return NodeSearchEngine(
         repository=PostgresNodeSearchRepository(),
-        embedder=OllamaEmbeddingEngine(),
+        embedder=EmbeddingServiceClient(),
     )
 
 
@@ -96,4 +96,4 @@ def get_memory_surfacing_store() -> MemorySurfacingStore:
 def get_embedding_model() -> str:
     """Embedding model whose projections related-edge expansion reads."""
 
-    return OllamaEmbeddingEngine().model
+    return EmbeddingServiceClient().model

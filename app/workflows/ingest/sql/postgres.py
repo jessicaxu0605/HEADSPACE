@@ -190,12 +190,12 @@ class StaleTransactionPlanError(RuntimeError):
 def _postgres_resolver_store() -> CanonicalGraphResolverStore:
     # Keep the resolution policy module persistence-agnostic while making live
     # PostgreSQL reads the default for production ingestion.
-    from app.integrations.ollama import OllamaEmbeddingEngine
+    from app.integrations.ollama import EmbeddingServiceClient
     from app.workflows.ingest.resolution.sql.postgres import (
         PostgresCanonicalGraphResolverStore,
     )
 
-    return PostgresCanonicalGraphResolverStore(embedder=OllamaEmbeddingEngine())
+    return PostgresCanonicalGraphResolverStore(embedder=EmbeddingServiceClient())
 
 
 @dataclass
